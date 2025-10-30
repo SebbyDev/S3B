@@ -1,69 +1,380 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>DJ-S3B | Official Links</title>
-    <style>
-        body {
-            background-color: black;
-            color: white;
-            font-family: 'Helvetica Neue', sans-serif;
-            text-align: center;
-            margin: 0;
-            padding: 0;
-        }
-
-        h1 {
-            font-size: 3em;
-            margin-top: 40px;
-            font-weight: bold;
-        }
-
-        .link-container {
-            margin-top: 40px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }
-
-        a {
-            color: white;
-            background-color: white;
-            color: black;
-            padding: 15px 30px;
-            text-decoration: none;
-            font-weight: bold;
-            border: 2px solid white;
-            transition: 0.3s ease;
-            width: 250px;
-            text-align: center;
-        }
-
-        a:hover {
-            background-color: black;
-            color: white;
-            border: 2px solid white;
-        }
-
-        footer {
-            margin-top: 60px;
-            font-size: 0.9em;
-            color: #777;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GTA‑Lite: Big City Build</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0e0e12; color: #eaeaf0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
+    #hud { position: fixed; inset: 0; pointer-events: none; }
+    .panel { position: absolute; left: 12px; bottom: 12px; background: rgba(20,20,28,.75); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(6px); }
+    .panel h3 { margin: 0 0 6px; font-size: 14px; letter-spacing:.5px; color: #a9b0ff; }
+    .panel p { margin: 4px 0; font-size: 12px; color: #cfd3ff; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#222538; color:#cfd3ff; font-size:12px; margin-right:6px }
+    #minimap { position: absolute; right: 12px; top: 12px; width: 220px; height: 220px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); overflow: hidden; background: #1a1c27; }
+    #minimap canvas { width: 100%; height: 100%; display: block; }
+    #centerMsg { position: fixed; left: 50%; top: 8%; transform: translateX(-50%); font-size: 18px; color:#a8f0ff; text-shadow:0 2px 8px rgba(0,0,0,.4); white-space: pre-line; }
+    #pause { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.35); }
+    #pause .card { pointer-events:auto; width:min(720px,90vw); background:#11131b; border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:18px 20px; box-shadow:0 10px 40px rgba(0,0,0,.4); }
+    #pause h2 { margin: 0 0 10px; font-size: 20px; color:#f6f7ff }
+    #pause ul { margin: 6px 0 0 20px; line-height:1.6; color:#d6daf8; font-size:14px }
+    canvas { display:block; width:100vw; height:100vh; }
+  </style>
 </head>
 <body>
-    <h1>DJ‑S3B</h1>
-    <div class="link-container">
-        <a href="https://youtube.com/@s3b-dj?si=uinAHSNb98LMf5ZI" target="_blank">YouTube Channel 📷 </a>
-        <a href="https://open.spotify.com/artist/4Ah84RRSc5zh2U1grcdd2j?si=xIyimATqQgmbEHsZyT-yxg" target="_blank">Spotify 🎧 </a>
-        <a href="https://music.apple.com/us/artist/dj-s3b/1826928952" target="_blank">Apple Music 🎵</a>
-        <a href="https://s3b-shop.fourthwall.com" target="_blank">Merch Store 🛍️ </a>
-        <a href="https://discord.gg/rukbkNrf" target="_blank">Discord 👾 </a>
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="hud">
+    <div class="panel">
+      <h3>GTA‑Lite</h3>
+      <p><span class="badge">WASD</span>Drive • <span class="badge">SPACE</span>Toggle Wanted • <span class="badge">Shift</span>Handbrake</p>
+      <p><span class="badge">P</span>Pause • <span class="badge">R</span>Reset • <span class="badge">M</span>Zoom</p>
+      <p>Speed: <span id="spd">0</span> | ⭐: <span id="wanted">0</span> | Cops: <span id="copCount">1</span> | Helis: <span id="heliCount">0</span> | Score: <span id="score">0</span> | Best: <span id="best">0</span></p>
     </div>
-    <footer>
-        <p>© 2025 DJ‑S3B. All rights reserved.</p>
-    </footer>
+    <div id="minimap"><canvas id="mini" width="220" height="220"></canvas></div>
+    <div id="centerMsg"></div>
+  </div>
+  <div id="pause">
+    <div class="card">
+      <h2>Paused</h2>
+      <ul>
+        <li>Press <b>SPACE</b> to start at 2⭐. Stars now rise more slowly (heat + heli spotting).</li>
+        <li>Helicopters deploy less often, and fire slow missiles at 3⭐+.</li>
+        <li>Player & cops now have the <b>same top speed</b> for fair chases.</li>
+        <li>When caught, you’ll see <b>Score</b> and your saved <b>Best</b> (localStorage).</li>
+      </ul>
+    </div>
+  </div>
+  <script>
+  // ======= Helpers =======
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const dist2 = (ax, ay, bx, by) => { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy };
+
+  // ======= Input =======
+  const keys = new Set();
+  addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); if(['w','a','s','d',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
+  addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
+
+  // ======= Canvas & Camera =======
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.max(1, Math.min(2, devicePixelRatio || 1));
+  const resize = () => { canvas.width = innerWidth * DPR; canvas.height = innerHeight * DPR; ctx.setTransform(DPR,0,0,DPR,0,0); };
+  addEventListener('resize', resize); resize();
+
+  const camera = { x: 0, y: 0, zoomSteps: [1.0, 1.25, 1.5], zi: 0 };
+
+  // ======= World =======
+  const WORLD_SIZE = 4000, ROAD_W = 180, BLOCK = 600;
+  const buildings = [];
+  for (let gx = -3; gx <= 3; gx++) {
+    for (let gy = -3; gy <= 3; gy++) {
+      const cx = gx * BLOCK, cy = gy * BLOCK;
+      const n = 3 + ((gx*17 + gy*23) % 3);
+      for (let i=0;i<n;i++) {
+        const rx = ((i*97 + gx*311) % 260) - 130;
+        const ry = ((i*131 + gy*199) % 260) - 130;
+        const w = 120 + ((i*53) % 80);
+        const h = 90 + ((i*71) % 120);
+        const bx = cx + rx, by = cy + ry;
+        if (Math.abs(bx) % BLOCK < ROAD_W || Math.abs(by) % BLOCK < ROAD_W) continue;
+        buildings.push({x: bx, y: by, w, h});
+      }
+    }
+  }
+
+  // ======= Entities =======
+  function makeCar(opts) {
+    return {
+      x: opts.x, y: opts.y, angle: opts.angle || 0, vx:0, vy:0, speed:0,
+      w: 48, h: 24, color: opts.color || '#58f',
+      maxSpeed: opts.maxSpeed, accel: opts.accel, turn: opts.turn || 2.6,
+      handbrake: false, ai: opts.ai || null, type: opts.type || 'civil', alive: true
+    };
+  }
+
+  // Fair speed for player & cops
+  const FAIR_TOP = 700, FAIR_ACCEL = 1200;
+
+  const player = makeCar({ x: 80, y: 80, color:'#6ef', maxSpeed: FAIR_TOP, accel: FAIR_ACCEL, turn: 3.0, type:'player' });
+
+  function makePatrol(x, y, waypoints, color, maxSpeed) {
+    const c = makeCar({ x, y, color: color||'#9f9', maxSpeed: 520, accel: 700, turn: 2.2, type:'npc' });
+    c.ai = { mode:'patrol', i:0, waypoints };
+    return c;
+  }
+  function makeCop(x, y) {
+    const c = makeCar({ x, y, color:'#ff6', maxSpeed: FAIR_TOP, accel: FAIR_ACCEL, turn: 3.0, type:'cop' });
+    c.ai = { mode:'idle' };
+    return c;
+  }
+
+  function makeHeli(x, y) { // fires slow missiles at 3⭐+
+    return {
+      x, y, z: 300, angle: 0, rot: 0, type: 'heli',
+      speed: 300, spotlight: 220,
+      ai: { orbitR: 420 + Math.random()*120, spotCooldown: 0, fireCooldown: 0 },
+      missiles: []
+    };
+  }
+
+  function makeMissile(x, y, tx, ty) {
+    const ang = Math.atan2(ty-y, tx-x);
+    const SPD = 180; // slow
+    return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 6 };
+  }
+
+  const npcs = [ makePatrol(-700, -700, [ [-700,-700], [-700,700], [700,700], [700,-700] ]) ];
+  const cops = [ makeCop(400, -400) ];
+  const helis = [];
+
+  // ======= Gameplay State =======
+  let wanted = 0; // stars (0..5)
+  let busted = false;
+  let pause = false;
+
+  // Score & best
+  let score = 0, scoreAcc = 0;
+  let best = Number(localStorage.getItem('gtaLiteBest')||0);
+
+  // Heat (harder now)
+  let heatTimer = 0; // grows while wanted>0, increases ⭐ on threshold
+  const HEAT_RATE_BASE = 0.04;     // slower base
+  const HEAT_RATE_SPEED = 0.35;    // scaled by speed fraction
+  const HEAT_THRESHOLD = 14;       // longer to rise
+
+  const msg = (t, ms=1200) => {
+    const el = document.getElementById('centerMsg');
+    el.textContent = t; el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(()=> el.style.opacity = '0', ms);
+  };
+
+  function onBusted(){
+    busted = true;
+    const finalScore = score|0;
+    if (finalScore > best) { best = finalScore; localStorage.setItem('gtaLiteBest', String(best)); }
+    msg(`BUSTED!
+Score: ${finalScore}
+Best: ${best}
+Press R to restart`, 4000);
+    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0;
+  }
+
+  // ======= Physics & Collision =======
+  function carCircle(car) { return {x:car.x, y:car.y, r: Math.max(car.w, car.h)*0.42}; }
+  function collideCarWithBuildings(car) {
+    const circ = carCircle(car);
+    for (const b of buildings) {
+      const cx = clamp(circ.x, b.x - b.w/2, b.x + b.w/2);
+      const cy = clamp(circ.y, b.y - b.h/2, b.y + b.h/2);
+      const d2 = dist2(circ.x, circ.y, cx, cy);
+      if (d2 < circ.r * circ.r) {
+        const dx = circ.x - cx, dy = circ.y - cy; const len = Math.hypot(dx,dy) || 1;
+        const nx = dx/len, ny = dy/len; const overlap = circ.r - Math.sqrt(d2);
+        car.x += nx * overlap; car.y += ny * overlap; car.vx *= 0.25; car.vy *= 0.25; car.speed *= 0.5;
+        score = Math.max(0, score - 1);
+      }
+    }
+  }
+
+  function updateCar(car, dt) {
+    if (!car.alive) return;
+    if (car.type === 'player') {
+      const forward = keys.has('w') || keys.has('arrowup');
+      const back    = keys.has('s') || keys.has('arrowdown');
+      const left    = keys.has('a') || keys.has('arrowleft');
+      const right   = keys.has('d') || keys.has('arrowright');
+      const brake   = keys.has('shift'); car.handbrake = brake;
+      let thrust = 0; if (forward) thrust += car.accel; if (back) thrust -= car.accel * 0.8;
+      const steerFactor = clamp( (car.handbrake? 1.6 : 1.0) * (0.5 + 0.5*(1 - Math.abs(car.speed)/car.maxSpeed)), 0.4, 1.8 );
+      if (left)  car.angle -= car.turn * steerFactor * dt; if (right) car.angle += car.turn * steerFactor * dt;
+      const ax = Math.cos(car.angle) * thrust, ay = Math.sin(car.angle) * thrust;
+      car.vx += ax * dt; car.vy += ay * dt; const drag = car.handbrake ? 0.85 : 0.96; car.vx *= drag; car.vy *= drag;
+      car.speed = Math.hypot(car.vx, car.vy); const spdMax = car.maxSpeed * (car.handbrake ? 0.8 : 1.0);
+      if (car.speed > spdMax) { const k = spdMax / car.speed; car.vx *= k; car.vy *= k; car.speed = spdMax; }
+      car.x += car.vx * dt; car.y += car.vy * dt; collideCarWithBuildings(car);
+    } else if (car.type === 'npc') {
+      if (car.ai && car.ai.mode === 'patrol') {
+        const wp = car.ai.waypoints[car.ai.i]; const dx = wp[0] - car.x, dy = wp[1] - car.y; const d = Math.hypot(dx,dy) || 1;
+        const targetAngle = Math.atan2(dy, dx); let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+        car.angle += clamp(da, -car.turn*dt, car.turn*dt); const desired = car.maxSpeed * 0.6;
+        const thrust = (car.speed < desired ? car.accel : -car.accel*0.5); car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt;
+        car.vx *= 0.97; car.vy *= 0.97; car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy);
+        if (d < 80) car.ai.i = (car.ai.i + 1) % car.ai.waypoints.length; collideCarWithBuildings(car);
+      }
+    } else if (car.type === 'cop') {
+      car.ai.mode = wanted > 0 ? 'pursue' : 'idle';
+      const target = wanted > 0 ? player : {x:car.x+Math.cos(performance.now()*0.001)*20, y:car.y};
+      const dx = target.x - car.x, dy = target.y - car.y; const d = Math.hypot(dx,dy) || 1;
+      const targetAngle = Math.atan2(dy, dx); let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+      car.angle += clamp(da, -car.turn*dt*1.2, car.turn*dt*1.2);
+      const desired = wanted>0 ? car.maxSpeed*0.75 : 120; const thrust = (car.speed < desired ? car.accel : -car.accel*0.6);
+      car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt; car.vx *= 0.975; car.vy *= 0.975;
+      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); collideCarWithBuildings(car);
+      if (d < 50 && wanted>0 && !busted) onBusted();
+    }
+  }
+
+  // ======= Helicopters =======
+  function updateHeli(h, dt){
+    h.rot += dt * 20;
+    // Orbit around player
+    const t = performance.now()*0.001; const orbitAng = t * 0.45 + (h.ai.orbitR*0.001);
+    const ox = Math.cos(orbitAng) * h.ai.orbitR, oy = Math.sin(orbitAng) * h.ai.orbitR;
+    const targetX = player.x + ox, targetY = player.y + oy; const dx = targetX - h.x, dy = targetY - h.y; const d = Math.hypot(dx,dy) || 1;
+    const dirX = dx / d, dirY = dy / d; const desired = clamp(d*2, 110, h.speed); h.x += dirX * desired * dt; h.y += dirY * desired * dt; h.angle = Math.atan2(dirY, dirX);
+
+    // Spotlight raises stars slowly (harder now)
+    const toPX = player.x - h.x, toPY = player.y - h.y; const dot = (toPX*Math.cos(h.angle) + toPY*Math.sin(h.angle)) / (Math.hypot(toPX,toPY)||1);
+    if (dot > 0.83 && Math.hypot(toPX,toPY) < 520) {
+      h.ai.spotCooldown -= dt;
+      if (h.ai.spotCooldown <= 0 && wanted < 5) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 10; }
+    }
+
+    // Missile fire at 3⭐+
+    if (wanted >= 3) {
+      h.ai.fireCooldown -= dt;
+      if (h.ai.fireCooldown <= 0) {
+        h.missiles.push(makeMissile(h.x, h.y, player.x, player.y));
+        h.ai.fireCooldown = 5 + Math.random()*2; // slower, less often
+      }
+    }
+
+    // Missiles
+    for (const m of h.missiles) {
+      m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
+      if (dist2(m.x, m.y, player.x, player.y) < 26*26 && !busted) onBusted();
+    }
+    h.missiles = h.missiles.filter(m=> m.life>0);
+  }
+
+  // ======= Rendering =======
+  function drawWorld() {
+    // Grass
+    ctx.fillStyle = '#112316'; ctx.fillRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+    const z = camera.zoomSteps[camera.zi]; ctx.save(); ctx.translate(canvas.width/(2*DPR), canvas.height/(2*DPR)); ctx.scale(z, z); ctx.translate(-camera.x, -camera.y);
+
+    // Roads
+    ctx.fillStyle = '#6b6f79';
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) ctx.fillRect(x-ROAD_W/2, -WORLD_SIZE, ROAD_W, WORLD_SIZE*2);
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) ctx.fillRect(-WORLD_SIZE, y-ROAD_W/2, WORLD_SIZE*2, ROAD_W);
+
+    // Lane stripes
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.setLineDash([18,18]);
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) { ctx.beginPath(); ctx.moveTo(x, -WORLD_SIZE); ctx.lineTo(x, WORLD_SIZE); ctx.stroke(); }
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) { ctx.beginPath(); ctx.moveTo(-WORLD_SIZE, y); ctx.lineTo(WORLD_SIZE, y); ctx.stroke(); }
+    ctx.setLineDash([]);
+
+    // Buildings
+    ctx.fillStyle = '#2b2f3e'; buildings.forEach(b => ctx.fillRect(b.x - b.w/2, b.y - b.h/2, b.w, b.h));
+
+    // Cars
+    function drawCar(c) {
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.angle);
+      ctx.fillStyle = c.color; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 2;
+      ctx.fillRect(-c.w/2, -c.h/2, c.w, c.h);
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-c.w*0.15, -c.h*0.36, c.w*0.3, c.h*0.28);
+      if (c.type==='cop' && wanted>0) { ctx.fillStyle = 'rgba(255,40,40,.7)'; ctx.fillRect(-c.w/2, -c.h/2-3, c.w/2.2, 3); ctx.fillStyle = 'rgba(40,140,255,.7)'; ctx.fillRect(0, -c.h/2-3, c.w/2.2, 3); }
+      ctx.restore();
+    }
+    drawCar(player); npcs.forEach(drawCar); cops.forEach(drawCar);
+
+    // Helicopters
+    for (const h of helis) {
+      // Spotlight
+      ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#cfe9ff'; ctx.beginPath(); ctx.arc(h.x, h.y, h.spotlight, 0, Math.PI*2); ctx.fill(); ctx.restore();
+      // Body & rotor
+      ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle); ctx.fillStyle = '#ffd86b'; ctx.beginPath(); ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI*2); ctx.fill(); ctx.save(); ctx.rotate(h.rot); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-40, -2, 80, 4); ctx.restore(); ctx.restore();
+      // Missiles
+      ctx.fillStyle = '#aee2ff'; for (const m of h.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI*2); ctx.fill(); }
+    }
+
+    ctx.restore();
+
+    // Minimap
+    const mini = document.getElementById('mini'); const mctx = mini.getContext('2d');
+    mctx.clearRect(0,0,mini.width, mini.height); mctx.fillStyle = '#0f1420'; mctx.fillRect(0,0,mini.width, mini.height);
+    const scale = 0.05; const ox = mini.width/2 - player.x*scale; const oy = mini.height/2 - player.y*scale;
+    mctx.fillStyle = '#6b6f79';
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) mctx.fillRect(ox + (x-ROAD_W/2)*scale, oy + (-WORLD_SIZE)*scale, ROAD_W*scale, (WORLD_SIZE*2)*scale);
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) mctx.fillRect(ox + (-WORLD_SIZE)*scale, oy + (y-ROAD_W/2)*scale, (WORLD_SIZE*2)*scale, ROAD_W*scale);
+    mctx.fillStyle = '#394058'; buildings.forEach(b=> mctx.fillRect(ox + (b.x - b.w/2)*scale, oy + (b.y - b.h/2)*scale, b.w*scale, b.h*scale));
+    const dot = (x,y,r,col)=>{ mctx.fillStyle = col; mctx.beginPath(); mctx.arc(ox+x*scale, oy+y*scale, r, 0, Math.PI*2); mctx.fill(); };
+    dot(player.x, player.y, 3, '#7ef'); npcs.forEach(n=> dot(n.x,n.y,2,'#9f9')); cops.forEach(c=> dot(c.x,c.y,2, wanted>0?'#ff6':'#aaa')); helis.forEach(h=> dot(h.x,h.y,2,'#ffd86b'));
+  }
+
+  // ======= Game Loop =======
+  let last = performance.now();
+  function tick() {
+    const now = performance.now(); const dt = Math.min(0.033, (now - last)/1000); last = now;
+
+    if (!pause && !busted) {
+      updateCar(player, dt); npcs.forEach(n=> updateCar(n, dt)); cops.forEach(c=> updateCar(c, dt)); helis.forEach(h=> updateHeli(h, dt));
+
+      // Camera
+      const leadX = player.vx * 0.2, leadY = player.vy * 0.2; camera.x = lerp(camera.x, player.x + leadX, 0.1); camera.y = lerp(camera.y, player.y + leadY, 0.1);
+
+      // Scoring
+      scoreAcc += dt * (1 + (wanted>0 ? 1 : 0)); if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
+
+      // Heat (harder)
+      if (wanted>0 && wanted<5) {
+        const speedFrac = clamp(player.speed / player.maxSpeed, 0, 1);
+        // slower, but faster if near cops
+        let nearCop = false; for (const c of cops) { if (dist2(player.x,player.y,c.x,c.y) < 250*250) { nearCop = true; break; } }
+        heatTimer += dt * (HEAT_RATE_BASE + HEAT_RATE_SPEED*speedFrac + (nearCop? 0.18:0));
+        if (heatTimer >= HEAT_THRESHOLD) { wanted += 1; heatTimer = 0; msg('Heat rising! ⭐+1'); }
+      } else if (wanted===0) { heatTimer = 0; }
+    }
+
+    drawWorld();
+
+    // HUD
+    document.getElementById('spd').textContent = (player.speed/10|0);
+    document.getElementById('wanted').textContent = wanted;
+    document.getElementById('copCount').textContent = cops.length;
+    document.getElementById('heliCount').textContent = helis.length;
+    document.getElementById('score').textContent = score|0;
+    document.getElementById('best').textContent = best|0;
+
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  // ======= Controls =======
+  addEventListener('keydown', (e)=>{
+    const k = e.key.toLowerCase();
+    if (k==='p') { pause = !pause; document.getElementById('pause').style.display = pause? 'grid':'none'; }
+    if (k==='r') {
+      Object.assign(player, { x: 80, y: 80, angle: 0, vx:0, vy:0, speed:0 }); busted = false; wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0; msg('Reset!');
+    }
+    if (k===' ') { if (wanted===0) { wanted = 2; msg('Chaos started: 2⭐'); } else { wanted = 0; msg('Lay low...'); } }
+    if (k==='m') { camera.zi = (camera.zi + 1) % camera.zoomSteps.length; msg(`Zoom x${camera.zoomSteps[camera.zi].toFixed(2)}`); }
+  });
+
+  // ======= Spawners =======
+  // Cop spawner: every 10s, always add a cop near the player (soft cap to protect FPS)
+  setInterval(()=>{
+    const SOFT_CAP = 8;
+    if (cops.length < SOFT_CAP) {
+      const ang = Math.random()*Math.PI*2; const r = 700 + Math.random()*300;
+      cops.push(makeCop(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r));
+      msg('New cop unit spawned');
+    }
+    // helicopters: rarer & later (3⭐+), cap by stars (unchanged)
+    const heliCap = wanted >= 5 ? 2 : wanted >= 4 ? 1 : wanted >= 3 ? 1 : 0;
+    if (helis.length < heliCap) {
+      if (Math.random() < 0.5) {
+        const ang = Math.random()*Math.PI*2; const r = 1000 + Math.random()*500;
+        helis.push(makeHeli(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r));
+        msg('Helicopter deployed!');
+      }
+    }
+    if (wanted===0 && helis.length>0) helis.pop();
+  }, 10000);
+
+  </script>
 </body>
 </html>
