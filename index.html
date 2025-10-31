@@ -37,10 +37,12 @@
     <div class="card">
       <h2>Paused</h2>
       <ul>
-        <li>Press <b>SPACE</b> to start at 2⭐. Stars now rise more slowly (heat + heli spotting).</li>
-        <li>Helicopters deploy less often, and fire slow missiles at 3⭐+.</li>
-        <li>Player & cops now have the <b>same top speed</b> for fair chases.</li>
-        <li>When caught, you’ll see <b>Score</b> and your saved <b>Best</b> (localStorage).</li>
+        <li>Press <b>SPACE</b> to start at 2⭐. Stars rise slowly via heat + heli spotting.</li>
+        <li>Helicopters deploy less often, fire slow missiles at 3⭐+.</li>
+        <li>Player & cops have the <b>same top speed</b> for fair chases.</li>
+        <li>On death, you’ll see <b>Score</b> and saved <b>Best</b> (localStorage).</li>
+        <li><b>No score penalty</b> for bumping buildings.</li>
+        <li><b>New cop every 10s</b> (soft cap 8).</li>
       </ul>
     </div>
   </div>
@@ -173,7 +175,7 @@ Press R to restart`, 4000);
         const dx = circ.x - cx, dy = circ.y - cy; const len = Math.hypot(dx,dy) || 1;
         const nx = dx/len, ny = dy/len; const overlap = circ.r - Math.sqrt(d2);
         car.x += nx * overlap; car.y += ny * overlap; car.vx *= 0.25; car.vy *= 0.25; car.speed *= 0.5;
-        score = Math.max(0, score - 1);
+        // NOTE: No score penalty for building bumps
       }
     }
   }
@@ -355,7 +357,7 @@ Press R to restart`, 4000);
   });
 
   // ======= Spawners =======
-  // Cop spawner: every 10s, always add a cop near the player (soft cap to protect FPS)
+  // Cop spawner: every 10s, always add a cop near the player (soft cap 8)
   setInterval(()=>{
     const SOFT_CAP = 8;
     if (cops.length < SOFT_CAP) {
@@ -363,7 +365,7 @@ Press R to restart`, 4000);
       cops.push(makeCop(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r));
       msg('New cop unit spawned');
     }
-    // helicopters: rarer & later (3⭐+), cap by stars (unchanged)
+    // helicopters: rarer & later (3⭐+), cap by stars
     const heliCap = wanted >= 5 ? 2 : wanted >= 4 ? 1 : wanted >= 3 ? 1 : 0;
     if (helis.length < heliCap) {
       if (Math.random() < 0.5) {
