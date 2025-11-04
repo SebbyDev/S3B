@@ -1,12 +1,10 @@
 <!--- OMG Reid made it to 1167 score on 3 of November 2025. He currently has the highest score EVER---->
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GTA‑Lite: Big City Build</title>
+  <title>GTA-Lite: Big City Build</title>
   <style>
     html, body { height: 100%; margin: 0; background: #0e0e12; color: #eaeaf0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
     #hud { position: fixed; inset: 0; pointer-events: none; }
@@ -25,13 +23,13 @@
   </style>
 </head>
 <body>
-  <canvas id="game" width="1280" height="720"></canvas>
+  <canvas id="game"></canvas>
   <div id="hud">
     <div class="panel">
-      <h3>GTA‑Lite</h3>
+      <h3>GTA-Lite</h3>
       <p><span class="badge">WASD</span>Drive • <span class="badge">SPACE</span>Toggle Wanted • <span class="badge">Shift</span>Handbrake</p>
       <p><span class="badge">P</span>Pause • <span class="badge">R</span>Reset • <span class="badge">M</span>Zoom</p>
-      <p>Speed: <span id="spd">0</span> | ⭐: <span id="wanted">0</span> | Cops: <span id="copCount">1</span> | Helis: <span id="heliCount">0</span> | Score: <span id="score">0</span> | Best: <span id="best">0</span></p>
+      <p>Speed: <span id="spd">0</span> | ⭐: <span id="wanted">0</span> | Cops: <span id="copCount">1</span> | Helis: <span id="heliCount">0</span> | Tanks: <span id="tankCount">0</span> | Jets: <span id="jetCount">0</span> | Score: <span id="score">0</span> | Best: <span id="best">0</span></p>
     </div>
     <div id="minimap"><canvas id="mini" width="220" height="220"></canvas></div>
     <div id="centerMsg"></div>
@@ -41,11 +39,12 @@
       <h2>Paused</h2>
       <ul>
         <li>Press <b>SPACE</b> to start at 2⭐. Stars rise slowly via heat + heli spotting.</li>
-        <li>Helicopters deploy less often, fire slow missiles at 3⭐+.</li>
-        <li>Player & cops have the <b>same top speed</b> for fair chases.</li>
-        <li>On death, you’ll see <b>Score</b> and saved <b>Best</b> (localStorage).</li>
+        <li>Helicopters deploy less often; fire slow missiles at 3⭐+.</li>
+        <li>Player & cops share the <b>same top speed</b> for fair chases.</li>
+        <li>Score only while wanted &gt; 0. On death, you’ll see <b>Score</b> and saved <b>Best</b>.</li>
         <li><b>No score penalty</b> for bumping buildings.</li>
-        <li><b>New cop every 10s</b> (soft cap 8).</li>
+        <li><b>New cop every 10s</b> (soft cap 8). <b>Tanks at 7⭐</b>, <b>Jets at 10⭐</b>.</li>
+        <li><b>World borders</b> enabled — no camping off-map.</li>
       </ul>
     </div>
   </div>
@@ -71,6 +70,8 @@
 
   // ======= World =======
   const WORLD_SIZE = 4000, ROAD_W = 180, BLOCK = 600;
+  const clampToWorld = (o)=>{ o.x = clamp(o.x, -WORLD_SIZE+10, WORLD_SIZE-10); o.y = clamp(o.y, -WORLD_SIZE+10, WORLD_SIZE-10); };
+
   const buildings = [];
   for (let gx = -3; gx <= 3; gx++) {
     for (let gy = -3; gy <= 3; gy++) {
@@ -113,28 +114,46 @@
     c.ai = { mode:'idle' };
     return c;
   }
-
   function makeHeli(x, y) { // fires slow missiles at 3⭐+
-    return {
-      x, y, z: 300, angle: 0, rot: 0, type: 'heli',
-      speed: 300, spotlight: 220,
-      ai: { orbitR: 420 + Math.random()*120, spotCooldown: 0, fireCooldown: 0 },
-      missiles: []
-    };
+    return { x, y, z: 300, angle: 0, rot: 0, type: 'heli', speed: 300, spotlight: 220,
+             ai: { orbitR: 420 + Math.random()*120, spotCooldown: 0, fireCooldown: 0 }, missiles: [] };
   }
-
   function makeMissile(x, y, tx, ty) {
     const ang = Math.atan2(ty-y, tx-x);
     const SPD = 180; // slow
     return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 6 };
   }
 
-  const npcs = [ makePatrol(-700, -700, [ [-700,-700], [-700,700], [700,700], [700,-700] ]) ];
+  // Heavy units
+  function makeTank(x, y){
+    const c = makeCar({ x, y, color:'#9b8', maxSpeed: 300, accel: 600, turn: 2.0, type:'tank' });
+    c.cool = 0; c.shells = [];
+    c.w = 60; c.h = 36;
+    return c;
+  }
+  function makeShell(x, y, tx, ty){
+    const ang = Math.atan2(ty-y, tx-x);
+    const SPD = 240; // tank round
+    return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 5 };
+  }
+  function makeJet(x, y){
+    return { x, y, angle: 0, speed: 900, type: 'jet', cool: 0, missiles: [] };
+  }
+
+  // Initial population
+  const npcs = [];
+  for (let i=0;i<12;i++){
+    const ang = Math.random()*Math.PI*2, r = 800 + Math.random()*1200;
+    const bx = player.x + Math.cos(ang)*r, by = player.y + Math.sin(ang)*r;
+    npcs.push(makePatrol(bx, by, [[bx,by],[bx+300,by],[bx+300,by+300],[bx,by+300]]));
+  }
   const cops = [ makeCop(400, -400) ];
   const helis = [];
+  const tanks = [];
+  const jets  = [];
 
   // ======= Gameplay State =======
-  let wanted = 0; // stars (0..5)
+  let wanted = 0; // stars (0..10)
   let busted = false;
   let pause = false;
 
@@ -142,7 +161,7 @@
   let score = 0, scoreAcc = 0;
   let best = Number(localStorage.getItem('gtaLiteBest')||0);
 
-  // Heat (harder now)
+  // Heat
   let heatTimer = 0; // grows while wanted>0, increases ⭐ on threshold
   const HEAT_RATE_BASE = 0.04;     // slower base
   const HEAT_RATE_SPEED = 0.35;    // scaled by speed fraction
@@ -159,11 +178,8 @@
     busted = true;
     const finalScore = score|0;
     if (finalScore > best) { best = finalScore; localStorage.setItem('gtaLiteBest', String(best)); }
-    msg(`BUSTED!
-Score: ${finalScore}
-Best: ${best}
-Press R to restart`, 4000);
-    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0;
+    msg(`BUSTED!\nScore: ${finalScore}\nBest: ${best}\nPress R to restart`, 4000);
+    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0; tanks.length = 0; jets.length = 0;
   }
 
   // ======= Physics & Collision =======
@@ -178,7 +194,7 @@ Press R to restart`, 4000);
         const dx = circ.x - cx, dy = circ.y - cy; const len = Math.hypot(dx,dy) || 1;
         const nx = dx/len, ny = dy/len; const overlap = circ.r - Math.sqrt(d2);
         car.x += nx * overlap; car.y += ny * overlap; car.vx *= 0.25; car.vy *= 0.25; car.speed *= 0.5;
-        // NOTE: No score penalty for building bumps
+        // No score penalty for any car
       }
     }
   }
@@ -198,7 +214,7 @@ Press R to restart`, 4000);
       car.vx += ax * dt; car.vy += ay * dt; const drag = car.handbrake ? 0.85 : 0.96; car.vx *= drag; car.vy *= drag;
       car.speed = Math.hypot(car.vx, car.vy); const spdMax = car.maxSpeed * (car.handbrake ? 0.8 : 1.0);
       if (car.speed > spdMax) { const k = spdMax / car.speed; car.vx *= k; car.vy *= k; car.speed = spdMax; }
-      car.x += car.vx * dt; car.y += car.vy * dt; collideCarWithBuildings(car);
+      car.x += car.vx * dt; car.y += car.vy * dt; clampToWorld(car); collideCarWithBuildings(car);
     } else if (car.type === 'npc') {
       if (car.ai && car.ai.mode === 'patrol') {
         const wp = car.ai.waypoints[car.ai.i]; const dx = wp[0] - car.x, dy = wp[1] - car.y; const d = Math.hypot(dx,dy) || 1;
@@ -206,7 +222,7 @@ Press R to restart`, 4000);
         car.angle += clamp(da, -car.turn*dt, car.turn*dt); const desired = car.maxSpeed * 0.6;
         const thrust = (car.speed < desired ? car.accel : -car.accel*0.5); car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt;
         car.vx *= 0.97; car.vy *= 0.97; car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy);
-        if (d < 80) car.ai.i = (car.ai.i + 1) % car.ai.waypoints.length; collideCarWithBuildings(car);
+        if (d < 80) car.ai.i = (car.ai.i + 1) % car.ai.waypoints.length; clampToWorld(car); collideCarWithBuildings(car);
       }
     } else if (car.type === 'cop') {
       car.ai.mode = wanted > 0 ? 'pursue' : 'idle';
@@ -216,10 +232,22 @@ Press R to restart`, 4000);
       car.angle += clamp(da, -car.turn*dt*1.2, car.turn*dt*1.2);
       const desired = wanted>0 ? car.maxSpeed*0.75 : 120; const thrust = (car.speed < desired ? car.accel : -car.accel*0.6);
       car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt; car.vx *= 0.975; car.vy *= 0.975;
-      // --- separation from other cops to prevent merging ---
-      for (const o of cops) { if (o === car) continue; const dx = car.x - o.x, dy = car.y - o.y; const d2 = dx*dx + dy*dy; if (d2 < 70*70) { const d = Math.sqrt(d2) || 1; const push = (1 - d/70) * 220; car.vx += (dx/d) * push * dt; car.vy += (dy/d) * push * dt; } }
-      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); collideCarWithBuildings(car);
+      // separation from other cops to prevent merging
+      for (const o of cops) { if (o === car) continue; const dx2 = car.x - o.x, dy2 = car.y - o.y; const d2 = dx2*dx2 + dy2*dy2; if (d2 < 70*70) { const dd = Math.sqrt(d2) || 1; const push = (1 - dd/70) * 220; car.vx += (dx2/dd) * push * dt; car.vy += (dy2/dd) * push * dt; } }
+      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); clampToWorld(car); collideCarWithBuildings(car);
       if (d < 50 && wanted>0 && !busted) onBusted();
+    } else if (car.type === 'tank') {
+      // slow heavy pursuit
+      const dx = player.x - car.x, dy = player.y - car.y; const targetAngle = Math.atan2(dy, dx);
+      let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI; car.angle += clamp(da, -car.turn*dt, car.turn*dt);
+      const desired = car.maxSpeed * 0.6; const thrust = (car.speed < desired ? car.accel : -car.accel*0.5);
+      car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt; car.vx *= 0.985; car.vy *= 0.985;
+      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); clampToWorld(car); collideCarWithBuildings(car);
+      // fire shell occasionally
+      car.cool -= dt; if (wanted>=7 && car.cool <= 0) { car.shells.push(makeShell(car.x, car.y, player.x, player.y)); car.cool = 3.5 + Math.random()*2; }
+      // shells move & hit
+      for (const s of car.shells){ s.x += s.vx*dt; s.y += s.vy*dt; s.life -= dt; if (dist2(s.x,s.y,player.x,player.y) < 28*28 && !busted) onBusted(); }
+      car.shells = car.shells.filter(s=> s.life>0);
     }
   }
 
@@ -232,11 +260,11 @@ Press R to restart`, 4000);
     const targetX = player.x + ox, targetY = player.y + oy; const dx = targetX - h.x, dy = targetY - h.y; const d = Math.hypot(dx,dy) || 1;
     const dirX = dx / d, dirY = dy / d; const desired = clamp(d*2, 110, h.speed); h.x += dirX * desired * dt; h.y += dirY * desired * dt; h.angle = Math.atan2(dirY, dirX);
 
-    // Spotlight raises stars slowly (harder now)
+    // Spotlight raises stars slowly
     const toPX = player.x - h.x, toPY = player.y - h.y; const dot = (toPX*Math.cos(h.angle) + toPY*Math.sin(h.angle)) / (Math.hypot(toPX,toPY)||1);
     if (dot > 0.83 && Math.hypot(toPX,toPY) < 520) {
       h.ai.spotCooldown -= dt;
-      if (h.ai.spotCooldown <= 0 && wanted < 5) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 10; }
+      if (h.ai.spotCooldown <= 0 && wanted < 10) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 10; }
     }
 
     // Missile fire at 3⭐+
@@ -254,6 +282,18 @@ Press R to restart`, 4000);
       if (dist2(m.x, m.y, player.x, player.y) < 26*26 && !busted) onBusted();
     }
     h.missiles = h.missiles.filter(m=> m.life>0);
+  }
+
+  // ======= Jets =======
+  function updateJet(j, dt){
+    // dash across the map in straight passes aiming at player
+    const dx = player.x - j.x, dy = player.y - j.y; const ang = Math.atan2(dy, dx); j.angle = ang; j.x += Math.cos(ang)*j.speed*dt; j.y += Math.sin(ang)*j.speed*dt;
+    // fire faster missile sometimes at 10⭐
+    j.cool -= dt; if (wanted>=10 && j.cool<=0){
+      const m = makeMissile(j.x, j.y, player.x, player.y); m.vx *= 2.2; m.vy *= 2.2; m.life = 5; j.missiles.push(m); j.cool = 2.5 + Math.random();
+    }
+    for (const m of j.missiles){ m.x += m.vx*dt; m.y += m.vy*dt; m.life -= dt; if (dist2(m.x,m.y,player.x,player.y) < 26*26 && !busted) onBusted(); }
+    j.missiles = j.missiles.filter(m=> m.life>0);
   }
 
   // ======= Rendering =======
@@ -290,12 +330,26 @@ Press R to restart`, 4000);
 
     // Helicopters
     for (const h of helis) {
-      // Spotlight
       ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#cfe9ff'; ctx.beginPath(); ctx.arc(h.x, h.y, h.spotlight, 0, Math.PI*2); ctx.fill(); ctx.restore();
-      // Body & rotor
       ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle); ctx.fillStyle = '#ffd86b'; ctx.beginPath(); ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI*2); ctx.fill(); ctx.save(); ctx.rotate(h.rot); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-40, -2, 80, 4); ctx.restore(); ctx.restore();
-      // Missiles
       ctx.fillStyle = '#aee2ff'; for (const m of h.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI*2); ctx.fill(); }
+    }
+
+    // Tanks
+    for (const tnk of tanks){
+      ctx.save(); ctx.translate(tnk.x, tnk.y); ctx.rotate(tnk.angle);
+      ctx.fillStyle = '#8da66f'; ctx.fillRect(-tnk.w/2, -tnk.h/2, tnk.w, tnk.h);
+      ctx.fillStyle = '#cfd3bf'; ctx.fillRect(0, -4, 26, 8); // barrel
+      ctx.restore();
+      ctx.fillStyle = '#ffe1a8'; for (const s of tnk.shells){ ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI*2); ctx.fill(); }
+    }
+
+    // Jets
+    for (const j of jets){
+      ctx.save(); ctx.translate(j.x, j.y); ctx.rotate(j.angle);
+      ctx.fillStyle = '#9fc9ff'; ctx.beginPath(); ctx.moveTo(18,0); ctx.lineTo(-14,8); ctx.lineTo(-8,0); ctx.lineTo(-14,-8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#bfe7ff'; for (const m of j.missiles){ ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI*2); ctx.fill(); }
     }
 
     ctx.restore();
@@ -309,7 +363,8 @@ Press R to restart`, 4000);
     for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) mctx.fillRect(ox + (-WORLD_SIZE)*scale, oy + (y-ROAD_W/2)*scale, (WORLD_SIZE*2)*scale, ROAD_W*scale);
     mctx.fillStyle = '#394058'; buildings.forEach(b=> mctx.fillRect(ox + (b.x - b.w/2)*scale, oy + (b.y - b.h/2)*scale, b.w*scale, b.h*scale));
     const dot = (x,y,r,col)=>{ mctx.fillStyle = col; mctx.beginPath(); mctx.arc(ox+x*scale, oy+y*scale, r, 0, Math.PI*2); mctx.fill(); };
-    dot(player.x, player.y, 3, '#7ef'); npcs.forEach(n=> dot(n.x,n.y,2,'#9f9')); cops.forEach(c=> dot(c.x,c.y,2, wanted>0?'#ff6':'#aaa')); helis.forEach(h=> dot(h.x,h.y,2,'#ffd86b'));
+    dot(player.x, player.y, 3, '#7ef'); npcs.forEach(n=> dot(n.x,n.y,2,'#9f9')); cops.forEach(c=> dot(c.x,c.y,2, wanted>0?'#ff6':'#aaa'));
+    helis.forEach(h=> dot(h.x,h.y,2,'#ffd86b')); tanks.forEach(t=> dot(t.x,t.y,2,'#b9e68b')); jets.forEach(j=> dot(j.x,j.y,2,'#9fc9ff'));
   }
 
   // ======= Game Loop =======
@@ -319,19 +374,18 @@ Press R to restart`, 4000);
 
     if (!pause && !busted) {
       updateCar(player, dt); npcs.forEach(n=> updateCar(n, dt)); cops.forEach(c=> updateCar(c, dt)); helis.forEach(h=> updateHeli(h, dt));
+      tanks.forEach(t=> updateCar(t, dt)); jets.forEach(j=> updateJet(j, dt));
 
       // Camera
       const leadX = player.vx * 0.2, leadY = player.vy * 0.2; camera.x = lerp(camera.x, player.x + leadX, 0.1); camera.y = lerp(camera.y, player.y + leadY, 0.1);
 
-      // Scoring
-      // Score only while wanted>0. More stars = faster scoring.
-scoreAcc += dt * (wanted > 0 ? Math.max(0.5, wanted) : 0);
-if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
+      // Scoring — only while wanted, scale with stars
+      scoreAcc += dt * (wanted > 0 ? Math.max(0.5, wanted) : 0);
+      if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
 
-      // Heat (harder)
-      if (wanted>0 && wanted<5) {
+      // Heat (to 10⭐)
+      if (wanted>0 && wanted<10) {
         const speedFrac = clamp(player.speed / player.maxSpeed, 0, 1);
-        // slower, but faster if near cops
         let nearCop = false; for (const c of cops) { if (dist2(player.x,player.y,c.x,c.y) < 250*250) { nearCop = true; break; } }
         heatTimer += dt * (HEAT_RATE_BASE + HEAT_RATE_SPEED*speedFrac + (nearCop? 0.18:0));
         if (heatTimer >= HEAT_THRESHOLD) { wanted += 1; heatTimer = 0; msg('Heat rising! ⭐+1'); }
@@ -345,6 +399,8 @@ if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
     document.getElementById('wanted').textContent = wanted;
     document.getElementById('copCount').textContent = cops.length;
     document.getElementById('heliCount').textContent = helis.length;
+    document.getElementById('tankCount').textContent = tanks.length;
+    document.getElementById('jetCount').textContent = jets.length;
     document.getElementById('score').textContent = score|0;
     document.getElementById('best').textContent = best|0;
 
@@ -357,49 +413,52 @@ if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
     const k = e.key.toLowerCase();
     if (k==='p') { pause = !pause; document.getElementById('pause').style.display = pause? 'grid':'none'; }
     if (k==='r') {
-      Object.assign(player, { x: 80, y: 80, angle: 0, vx:0, vy:0, speed:0 }); busted = false; wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0; msg('Reset!');
+      Object.assign(player, { x: 80, y: 80, angle: 0, vx:0, vy:0, speed:0 }); busted = false; wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0; tanks.length = 0; jets.length = 0; msg('Reset!');
     }
     if (k===' ') { if (wanted===0) { wanted = 2; msg('Chaos started: 2⭐'); } else { wanted = 0; msg('Lay low...'); } }
     if (k==='m') { camera.zi = (camera.zi + 1) % camera.zoomSteps.length; msg(`Zoom x${camera.zoomSteps[camera.zi].toFixed(2)}`); }
   });
 
   // ======= Spawners =======
-  // Helper: spawn a cop near player but not on top of others
   function spawnCopNearPlayer() {
-    const SOFT_CAP = 8;
-    if (cops.length >= SOFT_CAP) return false;
+    const SOFT_CAP = 8; if (cops.length >= SOFT_CAP) return false;
     for (let tries=0; tries<10; tries++) {
       const ang = Math.random()*Math.PI*2; const r = 700 + Math.random()*300;
       const x = player.x + Math.cos(ang)*r; const y = player.y + Math.sin(ang)*r;
       let ok = dist2(x,y,player.x,player.y) > 220*220;
-      if (ok) {
-        for (const c of cops) { if (dist2(x,y,c.x,c.y) < 220*220) { ok = false; break; } }
-      }
+      if (ok) { for (const c of cops) { if (dist2(x,y,c.x,c.y) < 220*220) { ok = false; break; } } }
       if (ok) { cops.push(makeCop(x,y)); return true; }
     }
-    // fallback: still push one, but slightly offset
-    const ang = Math.random()*Math.PI*2; const r = 900; cops.push(makeCop(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r));
-    return true;
+    return false;
   }
-  // Cop spawner: every 10s, always add a cop near the player (soft cap 8)
+
   setInterval(()=>{
     const SOFT_CAP = 8;
-    if (cops.length < SOFT_CAP) {
-      spawnCopNearPlayer();
-      msg('New cop unit spawned');
-    }
-    // helicopters: rarer & later (3⭐+), cap by stars
-    const heliCap = wanted >= 5 ? 2 : wanted >= 4 ? 1 : wanted >= 3 ? 1 : 0;
-    if (helis.length < heliCap) {
-      if (Math.random() < 0.5) {
-        const ang = Math.random()*Math.PI*2; const r = 1000 + Math.random()*500;
-        helis.push(makeHeli(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r));
-        msg('Helicopter deployed!');
-      }
-    }
-    if (wanted===0 && helis.length>0) helis.pop();
-  }, 10000);
+    if (cops.length < SOFT_CAP) { if (spawnCopNearPlayer()) msg('New cop unit spawned'); }
 
+    // helicopters: cap scales with wanted
+    const heliCap = wanted >= 9 ? 3 : wanted >= 7 ? 2 : wanted >= 3 ? 1 : 0;
+    if (helis.length < heliCap && Math.random() < 0.5) {
+      const ang = Math.random()*Math.PI*2; const r = 1000 + Math.random()*500;
+      helis.push(makeHeli(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('Helicopter deployed!');
+    }
+
+    // tanks at 7⭐+
+    const tankCap = wanted >= 9 ? 3 : wanted >= 7 ? 2 : 0;
+    if (tanks.length < tankCap) {
+      const ang = Math.random()*Math.PI*2; const r = 1200 + Math.random()*600;
+      tanks.push(makeTank(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('⚠️ Tank incoming!');
+    }
+
+    // jets at 10⭐
+    const jetCap = wanted >= 10 ? 2 : 0;
+    if (jets.length < jetCap) {
+      const ang = Math.random()*Math.PI*2; const r = 1800 + Math.random()*800;
+      jets.push(makeJet(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('✈️ Jet inbound!');
+    }
+
+    if (wanted===0) { helis.length = 0; tanks.length = 0; jets.length = 0; }
+  }, 10000);
   </script>
 </body>
 </html>
