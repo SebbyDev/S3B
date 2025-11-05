@@ -175,9 +175,9 @@
 
   // ======= Heat — classic/slow pace =======
   let heatTimer = 0;
-  const HEAT_RATE_BASE  = 0.04;
-  const HEAT_RATE_SPEED = 0.35;
-  const HEAT_THRESHOLD  = 14;
+  const HEAT_RATE_BASE  = 0.15; // was 0.04
+const HEAT_RATE_SPEED = 0.80; // was 0.35
+const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
 
   const msg = (t, ms=1200) => {
     const el = document.getElementById('centerMsg');
