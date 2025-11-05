@@ -163,9 +163,9 @@
 
   // Heat
   let heatTimer = 0; // grows while wanted>0, increases ⭐ on threshold
-  const HEAT_RATE_BASE = 0.04;     // slower base
-  const HEAT_RATE_SPEED = 0.35;    // scaled by speed fraction
-  const HEAT_THRESHOLD = 14;       // longer to rise
+  const HEAT_RATE_BASE = 0.15;     // slower base
+  const HEAT_RATE_SPEED = 0.08;    // scaled by speed fraction
+  const HEAT_THRESHOLD = 6;       // longer to rise
 
   const msg = (t, ms=1200) => {
     const el = document.getElementById('centerMsg');
