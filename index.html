@@ -1,372 +1,571 @@
 <!-- VERSION: 2.6--->
-
-<!-- Reid Was the first to ever reach 1000--->
+<!-- Reid Was The First To 1,000--->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>GTA-Lite (Anti Spawn-Camp Demo)</title>
-<style>
-  html, body { margin:0; height:100%; background:#0e0e12; color:#eaeaf0; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
-  #hud { position:fixed; top:10px; left:10px; background:#121421cc; border:1px solid #26293a; border-radius:12px; padding:8px 12px; }
-  #hud .row { display:flex; gap:12px; align-items:center; }
-  #hud .pill { padding:3px 8px; border-radius:999px; border:1px solid #26293a; background:#0f1120; color:#b7bdde; }
-  #hud strong { color:#f6f7ff; }
-  canvas { display:block; margin:0 auto; background:#0b0d18; border-left:1px solid #26293a; border-right:1px solid #26293a; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wanted: 1 Beta</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0e0e12; color: #eaeaf0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; }
+    #hud { position: fixed; inset: 0; pointer-events: none; }
+    .panel { position: absolute; left: 12px; bottom: 12px; background: rgba(20,20,28,.75); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(6px); }
+    .panel h3 { margin: 0 0 6px; font-size: 14px; letter-spacing:.5px; color: #a9b0ff; }
+    .panel p { margin: 4px 0; font-size: 12px; color: #cfd3ff; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#222538; color:#cfd3ff; font-size:12px; margin-right:6px }
+    #minimap { position: absolute; right: 12px; top: 12px; width: 220px; height: 220px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); overflow: hidden; background: #1a1c27; }
+    #minimap canvas { width: 100%; height: 100%; display: block; }
+    #centerMsg { position: fixed; left: 50%; top: 8%; transform: translateX(-50%); font-size: 24px; color:#a8f0ff; text-shadow:0 2px 8px rgba(0,0,0,.4); white-space: pre-line; letter-spacing:.5px }
+    #pause { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.35); }
+    #pause .card { pointer-events:auto; width:min(720px,90vw); background:#11131b; border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:18px 20px; box-shadow:0 10px 40px rgba(0,0,0,.4); }
+    #pause h2 { margin: 0 0 10px; font-size: 20px; color:#f6f7ff }
+    #pause ul { margin: 6px 0 0 20px; line-height:1.6; color:#d6daf8; font-size:14px }
+    canvas { display:block; width:100vw; height:100vh; }
+  </style>
 </head>
 <body>
-<div id="hud">
-  <div class="row">
-    <span class="pill">WASD: move</span>
-    <span class="pill">Shift: sprint</span>
-    <span class="pill">R: force respawn (test)</span>
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <div class="panel">
+      <h3>Wanted: 1 Beta</h3>
+      <p><span class="badge">WASD</span>Drive • <span class="badge">Shift</span>Handbrake • <span class="badge">P</span>Pause • <span class="badge">R</span>Reset • <span class="badge">M</span>Zoom</p>
+      <p>Speed: <span id="spd">0</span> | ⭐: <span id="wanted">0</span> | Cops: <span id="copCount">0</span> | Helis: <span id="heliCount">0</span> | Tanks: <span id="tankCount">0</span> | Jets: <span id="jetCount">0</span> | Score: <span id="score">0</span> | Best: <span id="best">0</span></p>
+    </div>
+    <div id="minimap"><canvas id="mini" width="220" height="220"></canvas></div>
+    <div id="centerMsg"></div>
   </div>
-  <div style="margin-top:6px">
-    <strong>Wanted:</strong> <span id="wanted">Yes</span> •
-    <strong>Health:</strong> <span id="hp">100</span> •
-    <strong>Cops:</strong> <span id="copCount">0</span>
+  <div id="pause">
+    <div class="card">
+      <h2>Paused</h2>
+      <ul>
+        <li>Game starts with a <b>3…2…1… GO!</b> countdown and ⭐2.</li>
+        <li><b>SPACE disabled</b> (no Lay Low).</li>
+        <li><b>Tanks at 5⭐</b>, <b>Jets at 7⭐</b> with fly-by missiles.</li>
+        <li>Easy stars (faster heat). Cop spawns are delayed and far from you.</li>
+        <li>No score penalty on buildings • World borders • Cop separation • Local best saved.</li>
+      </ul>
+    </div>
   </div>
-</div>
 
-<canvas id="game" width="960" height="600"></canvas>
+  <script>
+  // ======= Helpers =======
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const dist2 = (ax, ay, bx, by) => { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy };
 
-<script>
-/* =========================
-   === Config Tunables  ===
-   ========================= */
-const MAP_W = 2000, MAP_H = 1400;
-const PLAYER_RADIUS = 14;
-const COP_RADIUS = 12;
+  // ======= Input =======
+  const keys = new Set();
+  addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === ' ') { e.preventDefault(); return; } // disable Lay Low
+    keys.add(k);
+    if (['w','a','s','d'].includes(k)) e.preventDefault();
+  });
+  addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
 
-const WALK_SPEED = 180;   // px/s
-const SPRINT_SPEED = 260; // px/s
-const COP_SPEED = 120;    // px/s
+  // ======= Canvas & Camera =======
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.max(1, Math.min(2, devicePixelRatio || 1));
+  const resize = () => { canvas.width = innerWidth * DPR; canvas.height = innerHeight * DPR; ctx.setTransform(DPR,0,0,DPR,0,0); };
+  addEventListener('resize', resize); resize();
 
-const DAMAGE_PER_HIT = 17;
-const TOUCH_RANGE = PLAYER_RADIUS + COP_RADIUS - 2;
+  const camera = { x: 0, y: 0, zoomSteps: [1.0, 1.25, 1.5], zi: 0 };
 
-const SPAWN_PROTECTION_MS = 3000; // grace window
-const SAFE_RADIUS = 180;          // keep cops outside this while protected
-const MIN_SAFE_SPAWN = 200;       // preferred min distance of nearest cop
-const COP_SPAWN_COOLDOWN_MS = 900; // how often a new cop can spawn
+  // ======= World =======
+  const WORLD_SIZE = 4000, ROAD_W = 180, BLOCK = 600;
+  const clampToWorld = (o)=>{ o.x = clamp(o.x, -WORLD_SIZE+10, WORLD_SIZE-10); o.y = clamp(o.y, -WORLD_SIZE+10, WORLD_SIZE-10); };
 
-/* =========================
-   === Utility helpers   ===
-   ========================= */
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const rand = (a,b) => a + Math.random()*(b-a);
-const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
-
-// Uniform random position on the map
-function randPos() { return { x: rand(40, MAP_W-40), y: rand(40, MAP_H-40) }; }
-
-/* =========================
-   === World / Entities  ===
-   ========================= */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const keys = new Set();
-
-const player = {
-  pos: { x: 400, y: 300 },
-  vel: { x: 0, y: 0 },
-  hp: 100,
-  invulnerableUntil: 0,
-  spawnSafeUntil: 0,
-  uiCountdownEnd: 0
-};
-
-const cops = [];
-let lastCopSpawnAt = 0;
-
-// A few fixed spawn points spread around the map
-const spawnPoints = [
-  {x: 200,  y: 220},
-  {x: 1720, y: 260},
-  {x: 480,  y: 1200},
-  {x: 1480, y: 1040},
-  {x: 980,  y: 700},
-  {x: 260,  y: 980}
-];
-
-/* =========================
-   === Anti Spawn-Camp   ===
-   ========================= */
-function chooseSafeSpawn(spawnPoints, cops, minSafe = MIN_SAFE_SPAWN) {
-  const shuffled = spawnPoints.slice().sort(() => Math.random() - 0.5);
-
-  // First pass: any spawn that is >= minSafe from *every* cop
-  for (const p of shuffled) {
-    if (cops.every(c => dist(p, c.pos) >= minSafe)) return { x: p.x, y: p.y };
-  }
-
-  // Fallback: maximize nearest-cop distance
-  let best = shuffled[0], bestScore = -Infinity;
-  for (const p of shuffled) {
-    const nearest = cops.reduce((m,c)=> Math.min(m, dist(p, c.pos)), Infinity);
-    if (nearest > bestScore) { bestScore = nearest; best = p; }
-  }
-  return { x: best.x, y: best.y };
-}
-
-function startSpawnProtection(p) {
-  const end = performance.now() + SPAWN_PROTECTION_MS;
-  p.invulnerableUntil = end;
-  p.spawnSafeUntil = end;
-  p.uiCountdownEnd = end; // for 3-2-1-GO
-}
-
-function canDamagePlayer(p) {
-  return performance.now() > (p.invulnerableUntil || 0);
-}
-
-function copShouldTargetPlayer(p) {
-  const now = performance.now();
-  if (now <= (p.spawnSafeUntil || 0)) return false; // ignore during grace
-  return true;
-}
-
-function enforceNoCopZone(p, cops) {
-  const now = performance.now();
-  if (now > (p.spawnSafeUntil || 0)) return;
-
-  for (const cop of cops) {
-    const d = dist(p.pos, cop.pos);
-    if (d < SAFE_RADIUS) {
-      const dx = cop.pos.x - p.pos.x;
-      const dy = cop.pos.y - p.pos.y;
-      const n = Math.hypot(dx,dy) || 1;
-      const k = (SAFE_RADIUS - d) + 1;  // push to edge
-      cop.pos.x += (dx / n) * k;
-      cop.pos.y += (dy / n) * k;
-      if (cop.vel) { cop.vel.x = 0; cop.vel.y = 0; }
-      cop.nextThinkAt = Math.max(cop.nextThinkAt || 0, now + 250);
-    }
-  }
-}
-
-function spawnCopAvoidingPlayer(suggestedPos, player) {
-  const p = { x: suggestedPos.x, y: suggestedPos.y };
-  const d = dist(p, player.pos);
-  if (d < SAFE_RADIUS + 80) {
-    // move it to the ring outside the safe bubble
-    let dx = p.x - player.pos.x; if (!dx) dx = 1;
-    let dy = p.y - player.pos.y; if (!dy) dy = 0.4;
-    const n = Math.hypot(dx,dy);
-    const newD = SAFE_RADIUS + 140;
-    p.x = clamp(player.pos.x + (dx / n) * newD, 20, MAP_W-20);
-    p.y = clamp(player.pos.y + (dy / n) * newD, 20, MAP_H-20);
-  }
-  cops.push({ pos: p, vel: {x:0,y:0}, nextThinkAt: 0 });
-}
-
-function respawnPlayer() {
-  const spot = chooseSafeSpawn(spawnPoints, cops, MIN_SAFE_SPAWN);
-  player.pos.x = spot.x;
-  player.pos.y = spot.y;
-  player.vel.x = 0; player.vel.y = 0;
-  player.hp = 100;
-  startSpawnProtection(player);
-  // Instantly “wanted” (your rule), but protected
-  // (HUD already shows "Wanted: Yes")
-}
-
-/* =========================
-   === Input handling    ===
-   ========================= */
-addEventListener('keydown', (e)=> {
-  keys.add(e.key.toLowerCase());
-  if (e.key.toLowerCase() === 'r') { // quick test respawn
-    respawnPlayer();
-  }
-});
-addEventListener('keyup',   (e)=> keys.delete(e.key.toLowerCase()) );
-
-/* =========================
-   === Game update loop  ===
-   ========================= */
-let last = performance.now();
-
-function update(dt) {
-  // Player move
-  const up = keys.has('w'), down = keys.has('s'), left = keys.has('a'), right = keys.has('d');
-  const sprint = keys.has('shift');
-
-  let vx = 0, vy = 0;
-  if (up) vy -= 1;
-  if (down) vy += 1;
-  if (left) vx -= 1;
-  if (right) vx += 1;
-  const n = Math.hypot(vx, vy);
-  const speed = sprint ? SPRINT_SPEED : WALK_SPEED;
-  if (n) {
-    player.vel.x = (vx / n) * speed;
-    player.vel.y = (vy / n) * speed;
-  } else {
-    player.vel.x = 0; player.vel.y = 0;
-  }
-  player.pos.x = clamp(player.pos.x + player.vel.x * dt, PLAYER_RADIUS, MAP_W - PLAYER_RADIUS);
-  player.pos.y = clamp(player.pos.y + player.vel.y * dt, PLAYER_RADIUS, MAP_H - PLAYER_RADIUS);
-
-  // Cop AI (simple seek)
-  const now = performance.now();
-  for (const cop of cops) {
-    if (cop.nextThinkAt && now < cop.nextThinkAt) continue;
-
-    if (copShouldTargetPlayer(player)) {
-      const dx = player.pos.x - cop.pos.x;
-      const dy = player.pos.y - cop.pos.y;
-      const d = Math.hypot(dx,dy) || 1;
-      cop.vel.x = (dx/d) * COP_SPEED;
-      cop.vel.y = (dy/d) * COP_SPEED;
-    } else {
-      // Loiter while player protected
-      cop.vel.x = 0; cop.vel.y = 0;
-    }
-  }
-
-  // Cop move + clamp
-  for (const cop of cops) {
-    cop.pos.x = clamp(cop.pos.x + cop.vel.x * dt, COP_RADIUS, MAP_W - COP_RADIUS);
-    cop.pos.y = clamp(cop.pos.y + cop.vel.y * dt, COP_RADIUS, MAP_H - COP_RADIUS);
-  }
-
-  // Enforce safe bubble during protection
-  enforceNoCopZone(player, cops);
-
-  // Collisions (damage)
-  if (canDamagePlayer(player)) {
-    for (const cop of cops) {
-      if (dist(player.pos, cop.pos) <= TOUCH_RANGE) {
-        player.hp = Math.max(0, player.hp - DAMAGE_PER_HIT);
-        // small knock-back
-        const dx = player.pos.x - cop.pos.x, dy = player.pos.y - cop.pos.y;
-        const nn = Math.hypot(dx,dy) || 1;
-        player.pos.x = clamp(player.pos.x + (dx/nn)*8, PLAYER_RADIUS, MAP_W - PLAYER_RADIUS);
-        player.pos.y = clamp(player.pos.y + (dy/nn)*8, PLAYER_RADIUS, MAP_H - PLAYER_RADIUS);
+  const buildings = [];
+  for (let gx = -3; gx <= 3; gx++) {
+    for (let gy = -3; gy <= 3; gy++) {
+      const cx = gx * BLOCK, cy = gy * BLOCK;
+      const n = 3 + ((gx*17 + gy*23) % 3);
+      for (let i=0;i<n;i++) {
+        const rx = ((i*97 + gx*311) % 260) - 130;
+        const ry = ((i*131 + gy*199) % 260) - 130;
+        const w = 120 + ((i*53) % 80);
+        const h = 90 + ((i*71) % 120);
+        const bx = cx + rx, by = cy + ry;
+        if (Math.abs(bx) % BLOCK < ROAD_W || Math.abs(by) % BLOCK < ROAD_W) continue;
+        buildings.push({x: bx, y: by, w, h});
       }
     }
   }
 
-  // Death -> respawn safely
-  if (player.hp <= 0) {
-    respawnPlayer();
+  // ======= Entities =======
+  function makeCar(opts) {
+    return {
+      x: opts.x, y: opts.y, angle: opts.angle || 0, vx:0, vy:0, speed:0,
+      w: 48, h: 24, color: opts.color || '#58f',
+      maxSpeed: opts.maxSpeed, accel: opts.accel, turn: opts.turn || 2.6,
+      handbrake: false, ai: opts.ai || null, type: opts.type || 'civil', alive: true
+    };
   }
 
-  // Spawn more cops over time (not inside safe bubble)
-  if (now - lastCopSpawnAt > COP_SPAWN_COOLDOWN_MS && cops.length < 12) {
-    const edge = Math.floor(rand(0,4)); // spawn from edges to feel fair
-    let p;
-    if (edge === 0)      p = { x: rand(20, MAP_W-20), y: 20 };
-    else if (edge === 1) p = { x: rand(20, MAP_W-20), y: MAP_H-20 };
-    else if (edge === 2) p = { x: 20, y: rand(20, MAP_H-20) };
-    else                 p = { x: MAP_W-20, y: rand(20, MAP_H-20) };
-    spawnCopAvoidingPlayer(p, player);
-    lastCopSpawnAt = now;
+  // Fair speed for player & cops
+  const FAIR_TOP = 700, FAIR_ACCEL = 1200;
+
+  const player = makeCar({ x: 80, y: 80, color:'#6ef', maxSpeed: FAIR_TOP, accel: FAIR_ACCEL, turn: 3.0, type:'player' });
+
+  function makePatrol(x, y, waypoints, color) {
+    const c = makeCar({ x, y, color: color||'#9f9', maxSpeed: 520, accel: 700, turn: 2.2, type:'npc' });
+    c.ai = { mode:'patrol', i:0, waypoints };
+    return c;
+  }
+  function makeCop(x, y) {
+    const c = makeCar({ x, y, color:'#ff6', maxSpeed: FAIR_TOP, accel: FAIR_ACCEL, turn: 3.0, type:'cop' });
+    c.ai = { mode:'idle' };
+    return c;
+  }
+  function makeHeli(x, y) {
+    return { x, y, z: 300, angle: 0, rot: 0, type: 'heli', speed: 300, spotlight: 220,
+             ai: { orbitR: 420 + Math.random()*120, spotCooldown: 0, fireCooldown: 0 }, missiles: [] };
+  }
+  function makeMissile(x, y, tx, ty) {
+    const ang = Math.atan2(ty-y, tx-x);
+    const SPD = 180; // slow
+    return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 6 };
   }
 
-  // HUD
-  document.getElementById('hp').textContent = player.hp.toString();
-  document.getElementById('copCount').textContent = cops.length.toString();
-  document.getElementById('wanted').textContent = "Yes";
-}
-
-/* =========================
-   === Rendering         ===
-   ========================= */
-function render() {
-  // Camera follows player (simple)
-  const viewW = canvas.width, viewH = canvas.height;
-  const camX = clamp(player.pos.x - viewW/2, 0, MAP_W - viewW);
-  const camY = clamp(player.pos.y - viewH/2, 0, MAP_H - viewH);
-
-  ctx.save();
-  ctx.clearRect(0,0,viewW,viewH);
-  ctx.translate(-camX, -camY);
-
-  // Draw map grid
-  ctx.fillStyle = "#0b0d18";
-  ctx.fillRect(0,0,MAP_W,MAP_H);
-  ctx.strokeStyle = "#1a1f2e";
-  ctx.lineWidth = 1;
-  for (let x=0; x<MAP_W; x+=80) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,MAP_H); ctx.stroke(); }
-  for (let y=0; y<MAP_H; y+=80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(MAP_W,y); ctx.stroke(); }
-
-  // Optional: draw spawn points
-  ctx.fillStyle = "#2a334f";
-  for (const s of spawnPoints) {
-    ctx.beginPath(); ctx.arc(s.x, s.y, 6, 0, Math.PI*2); ctx.fill();
+  // Heavy units
+  function makeTank(x, y){
+    const c = makeCar({ x, y, color:'#9b8', maxSpeed: 300, accel: 600, turn: 2.0, type:'tank' });
+    c.cool = 0; c.shells = []; c.w = 60; c.h = 36;
+    return c;
+  }
+  function makeShell(x, y, tx, ty){
+    const ang = Math.atan2(ty-y, tx-x);
+    const SPD = 240; // tank round
+    return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 5 };
+  }
+  function makeJet(x, y){
+    const ang = Math.random()*Math.PI*2;
+    const passLen = 1600 + Math.random()*800;
+    return {
+      x, y, angle: ang, speed: 900, type: 'jet',
+      cool: 0, missiles: [],
+      grace: 1.5,                               // no firing immediately
+      targetX: x + Math.cos(ang) * passLen,     // fly-by target
+      targetY: y + Math.sin(ang) * passLen,
+      retarget: 0
+    };
   }
 
-  // Player safe radius during protection
-  const now = performance.now();
-  if (now <= (player.spawnSafeUntil || 0)) {
-    ctx.beginPath();
-    ctx.arc(player.pos.x, player.pos.y, SAFE_RADIUS, 0, Math.PI*2);
-    ctx.strokeStyle = "rgba(138,164,255,0.35)";
-    ctx.lineWidth = 3;
-    ctx.stroke();
+  // Initial population
+  const npcs = [];
+  for (let i=0;i<12;i++){
+    const ang = Math.random()*Math.PI*2, r = 800 + Math.random()*1200;
+    const bx = player.x + Math.cos(ang)*r, by = player.y + Math.sin(ang)*r;
+    npcs.push(makePatrol(bx, by, [[bx,by],[bx+300,by],[bx+300,by+300],[bx,by+300]]));
+  }
+  const cops  = [];           // SAFE: no cop at spawn
+  const helis = [];
+  const tanks = [];
+  const jets  = [];
+
+  // ======= Gameplay State =======
+  let wanted = 0; // stars (0..10)
+  let busted = false;
+  let pause = false;
+
+  // Start countdown state
+  let starting = false;
+  let startTimer = 0;
+
+  // Score & best
+  let score = 0, scoreAcc = 0;
+  let best = Number(localStorage.getItem('gtaLiteBest')||0);
+
+  // ======= Heat — EASY mode (faster stars) =======
+  let heatTimer = 0;
+  const HEAT_RATE_BASE  = 0.15;
+  const HEAT_RATE_SPEED = 0.80;
+  const HEAT_THRESHOLD  = 6;
+
+  const msgEl = document.getElementById('centerMsg');
+  const msg = (t, ms=1200) => {
+    msgEl.textContent = t; msgEl.style.opacity = '1';
+    clearTimeout(msgEl._t);
+    msgEl._t = setTimeout(()=> msgEl.style.opacity = '0', ms);
+  };
+
+  function onBusted(){
+    busted = true;
+    const finalScore = score|0;
+    if (finalScore > best) { best = finalScore; localStorage.setItem('gtaLiteBest', String(best)); }
+    msg(`BUSTED!\nScore: ${finalScore}\nBest: ${best}\nPress R to restart`, 4000);
+    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0;
+    helis.length = 0; tanks.length = 0; jets.length = 0;
   }
 
-  // Player
-  ctx.beginPath();
-  ctx.arc(player.pos.x, player.pos.y, PLAYER_RADIUS, 0, Math.PI*2);
-  ctx.fillStyle = "#8aa4ff";
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "#dfe5f4";
-  ctx.stroke();
-
-  // Cops
-  for (const cop of cops) {
-    ctx.beginPath();
-    ctx.arc(cop.pos.x, cop.pos.y, COP_RADIUS, 0, Math.PI*2);
-    ctx.fillStyle = "#ff9aa2";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#ffd1d6";
-    ctx.stroke();
+  // ======= Countdown control =======
+  function scheduleFirstCops(){
+    setTimeout(()=> spawnCopSafe(), 3000); // 3s after GO
+    setTimeout(()=> spawnCopSafe(), 6000); // optional second unit
+  }
+  function startCountdown() {
+    starting = true; startTimer = 3.0;
+    msgEl.style.opacity = '1';
+    msgEl.textContent = '3';
+    setTimeout(()=> msgEl.textContent = '2', 1000);
+    setTimeout(()=> msgEl.textContent = '1', 2000);
+    setTimeout(()=> { msgEl.textContent = 'GO!'; }, 3000);
+    setTimeout(()=> { msgEl.style.opacity = '0'; starting = false; wanted = 2; scheduleFirstCops(); }, 3600);
   }
 
-  // Countdown 3-2-1-GO
-  const t = (player.uiCountdownEnd || 0) - now;
-  if (t > -200) { // show GO for 0.2s
-    const s = Math.ceil(Math.max(0, t) / 1000); // 3..2..1..0
-    const text = (t > 0) ? (s.toString()) : "GO!";
-    ctx.save();
-    ctx.globalAlpha = 0.94;
-    ctx.font = "900 64px Inter, system-ui";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#eaeaf0";
-    ctx.fillText(text, player.pos.x, player.pos.y - 48);
+  // ======= Physics & Collision =======
+  function carCircle(car) { return {x:car.x, y:car.y, r: Math.max(car.w, car.h)*0.42}; }
+  function collideCarWithBuildings(car) {
+    const circ = carCircle(car);
+    for (const b of buildings) {
+      const cx = clamp(circ.x, b.x - b.w/2, b.x + b.w/2);
+      const cy = clamp(circ.y, b.y - b.h/2, b.y + b.h/2);
+      const d2 = dist2(circ.x, circ.y, cx, cy);
+      if (d2 < circ.r * circ.r) {
+        const dx = circ.x - cx, dy = circ.y - cy; const len = Math.hypot(dx,dy) || 1;
+        const nx = dx/len, ny = dy/len; const overlap = circ.r - Math.sqrt(d2);
+        car.x += nx * overlap; car.y += ny * overlap; car.vx *= 0.25; car.vy *= 0.25; car.speed *= 0.5;
+        // No score penalty
+      }
+    }
+  }
+
+  function updateCar(car, dt) {
+    if (!car.alive) return;
+    if (car.type === 'player') {
+      const forward = keys.has('w') || keys.has('arrowup');
+      const back    = keys.has('s') || keys.has('arrowdown');
+      const left    = keys.has('a') || keys.has('arrowleft');
+      const right   = keys.has('d') || keys.has('arrowright');
+      const brake   = keys.has('shift'); car.handbrake = brake;
+      let thrust = 0; if (forward) thrust += car.accel; if (back) thrust -= car.accel * 0.8;
+      const steerFactor = clamp( (car.handbrake? 1.6 : 1.0) * (0.5 + 0.5*(1 - Math.abs(car.speed)/car.maxSpeed)), 0.4, 1.8 );
+      if (left)  car.angle -= car.turn * steerFactor * dt; if (right) car.angle += car.turn * steerFactor * dt;
+      const ax = Math.cos(car.angle) * thrust, ay = Math.sin(car.angle) * thrust;
+      car.vx += ax * dt; car.vy += ay * dt; const drag = car.handbrake ? 0.85 : 0.96; car.vx *= drag; car.vy *= drag;
+      car.speed = Math.hypot(car.vx, car.vy); const spdMax = car.maxSpeed * (car.handbrake ? 0.8 : 1.0);
+      if (car.speed > spdMax) { const k = spdMax / car.speed; car.vx *= k; car.vy *= k; car.speed = spdMax; }
+      car.x += car.vx * dt; car.y += car.vy * dt; clampToWorld(car); collideCarWithBuildings(car);
+    } else if (car.type === 'npc') {
+      if (car.ai && car.ai.mode === 'patrol') {
+        const wp = car.ai.waypoints[car.ai.i]; const dx = wp[0] - car.x, dy = wp[1] - car.y; const d = Math.hypot(dx,dy) || 1;
+        const targetAngle = Math.atan2(dy, dx); let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+        car.angle += clamp(da, -car.turn*dt, car.turn*dt); const desired = car.maxSpeed * 0.6;
+        const thrust = (car.speed < desired ? car.accel : -car.accel*0.5); car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt;
+        car.vx *= 0.97; car.vy *= 0.97; car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy);
+        if (d < 80) car.ai.i = (car.ai.i + 1) % car.ai.waypoints.length; clampToWorld(car); collideCarWithBuildings(car);
+      }
+    } else if (car.type === 'cop') {
+      car.ai.mode = wanted > 0 ? 'pursue' : 'idle';
+      const target = wanted > 0 ? player : {x:car.x+Math.cos(performance.now()*0.001)*20, y:car.y};
+      const dx = target.x - car.x, dy = target.y - car.y; const d = Math.hypot(dx,dy) || 1;
+      const targetAngle = Math.atan2(dy, dx); let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+      car.angle += clamp(da, -car.turn*dt*1.2, car.turn*dt*1.2);
+      const desired = wanted>0 ? car.maxSpeed*0.75 : 120; const thrust = (car.speed < desired ? car.accel : -car.accel*0.6);
+      car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt; car.vx *= 0.975; car.vy *= 0.975;
+      // separation to prevent merging
+      for (const o of cops) {
+        if (o === car) continue;
+        const dx2 = car.x - o.x, dy2 = car.y - o.y; const d2 = dx2*dx2 + dy2*dy2;
+        if (d2 < 70*70) { const dd = Math.sqrt(d2) || 1; const push = (1 - dd/70) * 220; car.vx += (dx2/dd) * push * dt; car.vy += (dy2/dd) * push * dt; }
+      }
+      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); clampToWorld(car); collideCarWithBuildings(car);
+      if (d < 50 && wanted>0 && !busted) onBusted();
+    } else if (car.type === 'tank') {
+      // slow heavy pursuit
+      const dx = player.x - car.x, dy = player.y - car.y; const targetAngle = Math.atan2(dy, dx);
+      let da = ((targetAngle - car.angle + Math.PI*3) % (Math.PI*2)) - Math.PI; car.angle += clamp(da, -car.turn*dt, car.turn*dt);
+      const desired = car.maxSpeed * 0.6; const thrust = (car.speed < desired ? car.accel : -car.accel*0.5);
+      car.vx += Math.cos(car.angle) * thrust * dt; car.vy += Math.sin(car.angle) * thrust * dt; car.vx *= 0.985; car.vy *= 0.985;
+      car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); clampToWorld(car); collideCarWithBuildings(car);
+      // fire shell at 5⭐+
+      car.cool -= dt; if (wanted>=5 && car.cool <= 0) { car.shells.push(makeShell(car.x, car.y, player.x, player.y)); car.cool = 3.5 + Math.random()*2; }
+      for (const s of car.shells){ s.x += s.vx*dt; s.y += s.vy*dt; s.life -= dt; if (dist2(s.x,s.y,player.x,player.y) < 28*28 && !busted) onBusted(); }
+      car.shells = car.shells.filter(s=> s.life>0);
+    }
+  }
+
+  // ======= Helicopters =======
+  function updateHeli(h, dt){
+    h.rot += dt * 20;
+    const t = performance.now()*0.001; const orbitAng = t * 0.45 + (h.ai.orbitR*0.001);
+    const ox = Math.cos(orbitAng) * h.ai.orbitR, oy = Math.sin(orbitAng) * h.ai.orbitR;
+    const targetX = player.x + ox, targetY = player.y + oy; const dx = targetX - h.x, dy = targetY - h.y; const d = Math.hypot(dx,dy) || 1;
+    const dirX = dx / d, dirY = dy / d; const desired = clamp(d*2, 110, h.speed); h.x += dirX * desired * dt; h.y += dirY * desired * dt; h.angle = Math.atan2(dirY, dirX);
+
+    // Spotlight: easy mode (more often)
+    const toPX = player.x - h.x, toPY = player.y - h.y; const dot = (toPX*Math.cos(h.angle) + toPY*Math.sin(h.angle)) / (Math.hypot(toPX,toPY)||1);
+    if (dot > 0.83 && Math.hypot(toPX,toPY) < 520) {
+      h.ai.spotCooldown -= dt;
+      if (h.ai.spotCooldown <= 0 && wanted < 10) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 10; }
+    }
+
+    // Missiles at 3⭐+
+    if (wanted >= 3) {
+      h.ai.fireCooldown -= dt;
+      if (h.ai.fireCooldown <= 0) {
+        h.missiles.push(makeMissile(h.x, h.y, player.x, player.y));
+        h.ai.fireCooldown = 5 + Math.random()*2;
+      }
+    }
+
+    for (const m of h.missiles) {
+      m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
+      if (dist2(m.x, m.y, player.x, player.y) < 26*26 && !busted) onBusted();
+    }
+    h.missiles = h.missiles.filter(m=> m.life>0);
+  }
+
+  // ======= Jets (fly-by passes, spawn grace) =======
+  function updateJet(j, dt){
+    j.retarget -= dt;
+    if (j.retarget <= 0) {
+      const dir = Math.atan2(player.y - j.y, player.x - j.x) + (Math.random()*0.6 - 0.3);
+      const passLen = 1600 + Math.random()*800;
+      j.targetX = player.x + Math.cos(dir) * passLen;
+      j.targetY = player.y + Math.sin(dir) * passLen;
+      j.retarget = 3 + Math.random()*2;
+    }
+
+    const dx = j.targetX - j.x, dy = j.targetY - j.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const ang = Math.atan2(dy, dx);
+    j.angle = ang;
+    j.x += Math.cos(ang) * j.speed * dt;
+    j.y += Math.sin(ang) * j.speed * dt;
+
+    j.grace = Math.max(0, j.grace - dt);
+
+    const distToPlayer = Math.hypot(player.x - j.x, player.y - j.y);
+    j.cool -= dt;
+    if (wanted >= 7 && j.grace <= 0 && distToPlayer > 420 && j.cool <= 0) {
+      const m = makeMissile(j.x, j.y, player.x, player.y);
+      m.vx *= 2.0; m.vy *= 2.0; m.life = 5;
+      j.missiles.push(m);
+      j.cool = 2.8 + Math.random();
+    }
+
+    for (const m of j.missiles){
+      m.x += m.vx*dt; m.y += m.vy*dt; m.life -= dt;
+      if (dist2(m.x,m.y,player.x,player.y) < 26*26 && !busted) onBusted();
+    }
+    j.missiles = j.missiles.filter(m=> m.life>0);
+  }
+
+  // ======= Rendering =======
+  function drawWorld() {
+    // Grass
+    ctx.fillStyle = '#112316'; ctx.fillRect(0,0,canvas.width/DPR, canvas.height/DPR);
+
+    const z = camera.zoomSteps[camera.zi]; ctx.save(); ctx.translate(canvas.width/(2*DPR), canvas.height/(2*DPR)); ctx.scale(z, z); ctx.translate(-camera.x, -camera.y);
+
+    // Roads
+    ctx.fillStyle = '#6b6f79';
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) ctx.fillRect(x-ROAD_W/2, -WORLD_SIZE, ROAD_W, WORLD_SIZE*2);
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) ctx.fillRect(-WORLD_SIZE, y-ROAD_W/2, WORLD_SIZE*2, ROAD_W);
+
+    // Lane stripes
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.setLineDash([18,18]);
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) { ctx.beginPath(); ctx.moveTo(x, -WORLD_SIZE); ctx.lineTo(x, WORLD_SIZE); ctx.stroke(); }
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) { ctx.beginPath(); ctx.moveTo(-WORLD_SIZE, y); ctx.lineTo(WORLD_SIZE, y); ctx.stroke(); }
+    ctx.setLineDash([]);
+
+    // Buildings
+    ctx.fillStyle = '#2b2f3e'; buildings.forEach(b => ctx.fillRect(b.x - b.w/2, b.y - b.h/2, b.w, b.h));
+
+    // Cars (player, npcs, cops)
+    function drawCar(c) {
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.angle);
+      ctx.fillStyle = c.color; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 2;
+      ctx.fillRect(-c.w/2, -c.h/2, c.w, c.h);
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-c.w*0.15, -c.h*0.36, c.w*0.3, c.h*0.28);
+      if (c.type==='cop' && wanted>0) { ctx.fillStyle = 'rgba(255,40,40,.7)'; ctx.fillRect(-c.w/2, -c.h/2-3, c.w/2.2, 3); ctx.fillStyle = 'rgba(40,140,255,.7)'; ctx.fillRect(0, -c.h/2-3, c.w/2.2, 3); }
+      ctx.restore();
+    }
+    drawCar(player); npcs.forEach(drawCar); cops.forEach(drawCar);
+
+    // Tanks (body + turret) + shells
+    function drawTank(t){
+      ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle);
+      ctx.fillStyle = '#96b37f'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 2;
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
+      ctx.fillStyle = '#7e966c'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillRect(0, -2, 18, 4);
+      ctx.restore();
+      ctx.fillStyle = '#e7f0c8';
+      for (const s of t.shells) { ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI*2); ctx.fill(); }
+    }
+    tanks.forEach(drawTank);
+
+    // Helicopters
+    for (const h of helis) {
+      ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#cfe9ff'; ctx.beginPath(); ctx.arc(h.x, h.y, h.spotlight, 0, Math.PI*2); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle); ctx.fillStyle = '#ffd86b';
+      ctx.beginPath(); ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI*2); ctx.fill();
+      ctx.save(); ctx.rotate(h.rot); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-40, -2, 80, 4); ctx.restore(); ctx.restore();
+      ctx.fillStyle = '#aee2ff'; for (const m of h.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI*2); ctx.fill(); }
+    }
+
+    // Jets (triangle) + missiles
+    function drawJet(j){
+      ctx.save(); ctx.translate(j.x, j.y); ctx.rotate(j.angle);
+      ctx.fillStyle = '#9fc9ff'; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-16, -8);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-16, 8);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#d2ecff';
+      for (const m of j.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 3.5, 0, Math.PI*2); ctx.fill(); }
+    }
+    jets.forEach(drawJet);
+
     ctx.restore();
+
+    // Minimap
+    const mini = document.getElementById('mini'); const mctx = mini.getContext('2d');
+    mctx.clearRect(0,0,mini.width, mini.height); mctx.fillStyle = '#0f1420'; mctx.fillRect(0,0,mini.width, mini.height);
+    const scale = 0.05; const ox = mini.width/2 - player.x*scale; const oy = mini.height/2 - player.y*scale;
+    mctx.fillStyle = '#6b6f79';
+    for (let x=-WORLD_SIZE; x<=WORLD_SIZE; x+=BLOCK) mctx.fillRect(ox + (x-ROAD_W/2)*scale, oy + (-WORLD_SIZE)*scale, ROAD_W*scale, (WORLD_SIZE*2)*scale);
+    for (let y=-WORLD_SIZE; y<=WORLD_SIZE; y+=BLOCK) mctx.fillRect(ox + (-WORLD_SIZE)*scale, oy + (y-ROAD_W/2)*scale, (WORLD_SIZE*2)*scale, ROAD_W*scale);
+    mctx.fillStyle = '#394058'; buildings.forEach(b=> mctx.fillRect(ox + (b.x - b.w/2)*scale, oy + (b.y - b.h/2)*scale, b.w*scale, b.h*scale));
+    const dot = (x,y,r,col)=>{ mctx.fillStyle = col; mctx.beginPath(); mctx.arc(ox+x*scale, oy+y*scale, r, 0, Math.PI*2); mctx.fill(); };
+    dot(player.x, player.y, 3, '#7ef'); npcs.forEach(n=> dot(n.x,n.y,2,'#9f9')); cops.forEach(c=> dot(c.x,c.y,2, wanted>0?'#ff6':'#aaa'));
+    helis.forEach(h=> dot(h.x,h.y,2,'#ffd86b')); tanks.forEach(t=> dot(t.x,t.y,2,'#b9e68b')); jets.forEach(j=> dot(j.x,j.y,2,'#9fc9ff'));
   }
 
-  ctx.restore();
-}
+  // ======= Game Loop =======
+  let last = performance.now();
+  function tick() {
+    const now = performance.now(); const dt = Math.min(0.033, (now - last)/1000); last = now;
 
-/* =========================
-   === Boot & Main Loop  ===
-   ========================= */
-function gameLoop() {
-  const now = performance.now();
-  const dt = Math.min(0.033, (now - last) / 1000); // clamp dt
-  last = now;
+    if (starting) { startTimer = Math.max(0, startTimer - dt); }
 
-  update(dt);
-  render();
-  requestAnimationFrame(gameLoop);
-}
+    if (!pause && !busted && !starting) {
+      updateCar(player, dt); npcs.forEach(n=> updateCar(n, dt)); cops.forEach(c=> updateCar(c, dt));
+      helis.forEach(h=> updateHeli(h, dt)); tanks.forEach(t=> updateCar(t, dt)); jets.forEach(j=> updateJet(j, dt));
 
-// Start wanted instantly but give spawn protection
-respawnPlayer();
+      // Camera
+      const leadX = player.vx * 0.2, leadY = player.vy * 0.2; camera.x = lerp(camera.x, player.x + leadX, 0.1); camera.y = lerp(camera.y, player.y + leadY, 0.1);
 
-// Seed a few initial cops (respecting safe radius)
-for (let i=0; i<4; i++) spawnCopAvoidingPlayer(randPos(), player);
+      // Scoring — only while wanted, scale with stars
+      scoreAcc += dt * (wanted > 0 ? Math.max(0.5, wanted) : 0);
+      if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
 
-requestAnimationFrame(gameLoop);
-</script>
+      // Heat to 10⭐ — EASY mode + stronger near-cop bonus
+      if (wanted>0 && wanted<10) {
+        const speedFrac = clamp(player.speed / player.maxSpeed, 0, 1);
+        let nearCop = false; for (const c of cops) { if (dist2(player.x,player.y,c.x,c.y) < 250*250) { nearCop = true; break; } }
+        heatTimer += dt * (HEAT_RATE_BASE + HEAT_RATE_SPEED*speedFrac + (nearCop? 0.18:0));
+        if (heatTimer >= HEAT_THRESHOLD) { wanted += 1; heatTimer = 0; msg('Heat rising! ⭐+1'); }
+      } else if (wanted===0) { heatTimer = 0; }
+    }
+
+    drawWorld();
+
+    // HUD
+    document.getElementById('spd').textContent = (player.speed/10|0);
+    document.getElementById('wanted').textContent = wanted;
+    document.getElementById('copCount').textContent = cops.length;
+    document.getElementById('heliCount').textContent = helis.length;
+    document.getElementById('tankCount').textContent = tanks.length;
+    document.getElementById('jetCount').textContent = jets.length;
+    document.getElementById('score').textContent = score|0;
+    document.getElementById('best').textContent = best|0;
+
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  // ======= Safe cop spawns =======
+  const COP_SAFE_RADIUS = 900;   // must be at least this far from player
+  const COP_SPAWN_R_MIN = 900;
+  const COP_SPAWN_R_MAX = 1400;
+
+  function spawnCopSafe() {
+    const SOFT_CAP = 8;
+    if (cops.length >= SOFT_CAP) return false;
+
+    for (let tries = 0; tries < 20; tries++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r   = COP_SPAWN_R_MIN + Math.random() * (COP_SPAWN_R_MAX - COP_SPAWN_R_MIN);
+      const x   = player.x + Math.cos(ang) * r;
+      const y   = player.y + Math.sin(ang) * r;
+
+      // far from player
+      if (dist2(x,y, player.x,player.y) < COP_SAFE_RADIUS * COP_SAFE_RADIUS) continue;
+
+      // not on top of another cop
+      let ok = true;
+      for (const c of cops) { if (dist2(x,y, c.x,c.y) < 220*220) { ok = false; break; } }
+      if (!ok) continue;
+
+      // avoid buildings
+      for (const b of buildings) {
+        const cx = clamp(x, b.x - b.w/2, b.x + b.w/2);
+        const cy = clamp(y, b.y - b.h/2, b.y + b.h/2);
+        if (dist2(x,y,cx,cy) < 30*30) { ok = false; break; }
+      }
+      if (!ok) continue;
+
+      cops.push(makeCop(x,y));
+      return true;
+    }
+    return false;
+  }
+
+  // ======= Controls =======
+  addEventListener('keydown', (e)=>{
+    const k = e.key.toLowerCase();
+    if (k==='p') { pause = !pause; document.getElementById('pause').style.display = pause? 'grid':'none'; }
+    if (k==='r') {
+      Object.assign(player, { x: 80, y: 80, angle: 0, vx:0, vy:0, speed:0 });
+      busted = false; wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0;
+      helis.length = 0; tanks.length = 0; jets.length = 0; cops.length = 0;
+      msgEl.style.opacity = '0';
+      startCountdown();
+    }
+    if (k==='m') { camera.zi = (camera.zi + 1) % camera.zoomSteps.length; msg(`Zoom x${camera.zoomSteps[camera.zi].toFixed(2)}`); }
+  });
+
+  // ======= Spawners (10s tick) =======
+  setInterval(()=>{
+    const SOFT_CAP = 8;
+    if (!starting && cops.length < SOFT_CAP) {
+      if (spawnCopSafe()) msg('New cop unit spawned');
+    }
+
+    // helicopters: cap scales with wanted
+    const heliCap = wanted >= 9 ? 3 : wanted >= 7 ? 2 : wanted >= 3 ? 1 : 0;
+    if (helis.length < heliCap && Math.random() < 0.5 && !starting) {
+      const ang = Math.random()*Math.PI*2; const r = 1000 + Math.random()*500;
+      helis.push(makeHeli(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('Helicopter deployed!');
+    }
+
+    // tanks at 5⭐+
+    const tankCap = wanted >= 7 ? 3 : wanted >= 5 ? 2 : 0;
+    if (tanks.length < tankCap && !starting) {
+      const ang = Math.random()*Math.PI*2; const r = 1200 + Math.random()*600;
+      tanks.push(makeTank(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('⚠️ Tank incoming!');
+    }
+
+    // jets at 7⭐+
+    const jetCap = wanted >= 9 ? 2 : wanted >= 7 ? 1 : 0;
+    if (jets.length < jetCap && !starting) {
+      const ang = Math.random()*Math.PI*2; const r = 1800 + Math.random()*800;
+      jets.push(makeJet(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('✈️ Jet inbound!');
+    }
+
+    if (wanted===0 && !starting) { helis.length = 0; tanks.length = 0; jets.length = 0; }
+  }, 10000);
+
+  // Kick off initial countdown
+  startCountdown();
+  </script>
 </body>
 </html>
