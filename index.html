@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GTA-Lite: Big City Build</title>
+  <title>Wanted: 1 Beta</title>
   <style>
     html, body { height: 100%; margin: 0; background: #0e0e12; color: #eaeaf0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; }
     #hud { position: fixed; inset: 0; pointer-events: none; }
@@ -15,7 +15,7 @@
     .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#222538; color:#cfd3ff; font-size:12px; margin-right:6px }
     #minimap { position: absolute; right: 12px; top: 12px; width: 220px; height: 220px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); overflow: hidden; background: #1a1c27; }
     #minimap canvas { width: 100%; height: 100%; display: block; }
-    #centerMsg { position: fixed; left: 50%; top: 8%; transform: translateX(-50%); font-size: 18px; color:#a8f0ff; text-shadow:0 2px 8px rgba(0,0,0,.4); white-space: pre-line; }
+    #centerMsg { position: fixed; left: 50%; top: 8%; transform: translateX(-50%); font-size: 24px; color:#a8f0ff; text-shadow:0 2px 8px rgba(0,0,0,.4); white-space: pre-line; letter-spacing:.5px }
     #pause { position: fixed; inset: 0; display:none; place-items:center; background: rgba(0,0,0,.35); }
     #pause .card { pointer-events:auto; width:min(720px,90vw); background:#11131b; border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:18px 20px; box-shadow:0 10px 40px rgba(0,0,0,.4); }
     #pause h2 { margin: 0 0 10px; font-size: 20px; color:#f6f7ff }
@@ -27,9 +27,8 @@
   <canvas id="game"></canvas>
   <div id="hud">
     <div class="panel">
-      <h3>GTA-Lite</h3>
-      <p><span class="badge">WASD</span>Drive • <span class="badge">SPACE</span>Toggle Wanted • <span class="badge">Shift</span>Handbrake</p>
-      <p><span class="badge">P</span>Pause • <span class="badge">R</span>Reset • <span class="badge">M</span>Zoom</p>
+      <h3>Wanted: 1 Beta</h3>
+      <p><span class="badge">WASD</span>Drive • <span class="badge">Shift</span>Handbrake • <span class="badge">P</span>Pause • <span class="badge">R</span>Reset • <span class="badge">M</span>Zoom</p>
       <p>Speed: <span id="spd">0</span> | ⭐: <span id="wanted">0</span> | Cops: <span id="copCount">1</span> | Helis: <span id="heliCount">0</span> | Tanks: <span id="tankCount">0</span> | Jets: <span id="jetCount">0</span> | Score: <span id="score">0</span> | Best: <span id="best">0</span></p>
     </div>
     <div id="minimap"><canvas id="mini" width="220" height="220"></canvas></div>
@@ -39,16 +38,15 @@
     <div class="card">
       <h2>Paused</h2>
       <ul>
-        <li>Press <b>SPACE</b> to start at 2⭐. Stars rise slowly via heat + heli spotting.</li>
-        <li>Helicopters deploy less often; fire slow missiles at 3⭐+.</li>
-        <li>Player & cops share the <b>same top speed</b> for fair chases.</li>
-        <li>Score only while wanted &gt; 0. On death, you’ll see <b>Score</b> and saved <b>Best</b>.</li>
-        <li><b>No score penalty</b> for bumping buildings.</li>
-        <li><b>New cop every 10s</b> (soft cap 8). <b>Tanks at 5⭐</b>, <b>Jets at 7⭐</b>.</li>
-        <li><b>World borders</b> enabled — no camping off-map.</li>
+        <li>Game now <b>starts wanted</b> after a <b>3…2…1… GO!</b> countdown.</li>
+        <li><b>Lay Low (SPACE)</b> is disabled.</li>
+        <li><b>Tanks at 5⭐</b> (more at 7⭐), <b>Jets at 7⭐</b> (more at 9⭐).</li>
+        <li>Easy stars mode (heat ramps faster).</li>
+        <li>No score penalty on buildings • World borders • Cop separation • Local best saved.</li>
       </ul>
     </div>
   </div>
+
   <script>
   // ======= Helpers =======
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -57,7 +55,13 @@
 
   // ======= Input =======
   const keys = new Set();
-  addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); if(['w','a','s','d',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
+  addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    // Disable SPACE cheat (Lay Low)
+    if (k === ' ') { e.preventDefault(); return; }
+    keys.add(k);
+    if(['w','a','s','d'].includes(k)) e.preventDefault();
+  });
   addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
 
   // ======= Canvas & Camera =======
@@ -128,8 +132,7 @@
   // Heavy units
   function makeTank(x, y){
     const c = makeCar({ x, y, color:'#9b8', maxSpeed: 300, accel: 600, turn: 2.0, type:'tank' });
-    c.cool = 0; c.shells = [];
-    c.w = 60; c.h = 36;
+    c.cool = 0; c.shells = []; c.w = 60; c.h = 36;
     return c;
   }
   function makeShell(x, y, tx, ty){
@@ -137,18 +140,16 @@
     const SPD = 240; // tank round
     return { x, y, vx: Math.cos(ang)*SPD, vy: Math.sin(ang)*SPD, life: 5 };
   }
-
   function makeJet(x, y){
-    // spawn with a grace period (no instant kill) and set a fly-by waypoint
     const ang = Math.random()*Math.PI*2;
     const passLen = 1600 + Math.random()*800;
     return {
       x, y, angle: ang, speed: 900, type: 'jet',
       cool: 0, missiles: [],
-      grace: 1.5,                               // seconds: no firing during this time
+      grace: 1.5,                               // no firing immediately
       targetX: x + Math.cos(ang) * passLen,     // fly-by target
       targetY: y + Math.sin(ang) * passLen,
-      retarget: 0                               // timer to pick new pass
+      retarget: 0
     };
   }
 
@@ -169,21 +170,25 @@
   let busted = false;
   let pause = false;
 
+  // Start countdown state
+  let starting = false;
+  let startTimer = 0; // counts down seconds; while >0, gameplay frozen
+
   // Score & best
   let score = 0, scoreAcc = 0;
   let best = Number(localStorage.getItem('gtaLiteBest')||0);
 
-  // ======= Heat — classic/slow pace =======
+  // ======= Heat — EASY mode (faster stars) =======
   let heatTimer = 0;
-  const HEAT_RATE_BASE  = 0.15; // was 0.04
-const HEAT_RATE_SPEED = 0.80; // was 0.35
-const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
+  const HEAT_RATE_BASE  = 0.15;
+  const HEAT_RATE_SPEED = 0.80;
+  const HEAT_THRESHOLD  = 6;
 
+  const msgEl = document.getElementById('centerMsg');
   const msg = (t, ms=1200) => {
-    const el = document.getElementById('centerMsg');
-    el.textContent = t; el.style.opacity = '1';
-    clearTimeout(el._t);
-    el._t = setTimeout(()=> el.style.opacity = '0', ms);
+    msgEl.textContent = t; msgEl.style.opacity = '1';
+    clearTimeout(msgEl._t);
+    msgEl._t = setTimeout(()=> msgEl.style.opacity = '0', ms);
   };
 
   function onBusted(){
@@ -191,7 +196,19 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
     const finalScore = score|0;
     if (finalScore > best) { best = finalScore; localStorage.setItem('gtaLiteBest', String(best)); }
     msg(`BUSTED!\nScore: ${finalScore}\nBest: ${best}\nPress R to restart`, 4000);
-    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0; helis.length = 0; tanks.length = 0; jets.length = 0;
+    wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0;
+    helis.length = 0; tanks.length = 0; jets.length = 0;
+  }
+
+  // ======= Countdown control =======
+  function startCountdown() {
+    starting = true; startTimer = 3.0; // seconds
+    msgEl.style.opacity = '1';
+    msgEl.textContent = '3';
+    setTimeout(()=> msgEl.textContent = '2', 1000);
+    setTimeout(()=> msgEl.textContent = '1', 2000);
+    setTimeout(()=> { msgEl.textContent = 'GO!'; }, 3000);
+    setTimeout(()=> { msgEl.style.opacity = '0'; starting = false; wanted = 2; }, 3600);
   }
 
   // ======= Physics & Collision =======
@@ -261,7 +278,6 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
       car.x += car.vx * dt; car.y += car.vy * dt; car.speed = Math.hypot(car.vx, car.vy); clampToWorld(car); collideCarWithBuildings(car);
       // fire shell at 5⭐+
       car.cool -= dt; if (wanted>=5 && car.cool <= 0) { car.shells.push(makeShell(car.x, car.y, player.x, player.y)); car.cool = 3.5 + Math.random()*2; }
-      // shells move & hit
       for (const s of car.shells){ s.x += s.vx*dt; s.y += s.vy*dt; s.life -= dt; if (dist2(s.x,s.y,player.x,player.y) < 28*28 && !busted) onBusted(); }
       car.shells = car.shells.filter(s=> s.life>0);
     }
@@ -270,20 +286,19 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
   // ======= Helicopters =======
   function updateHeli(h, dt){
     h.rot += dt * 20;
-    // Orbit around player
     const t = performance.now()*0.001; const orbitAng = t * 0.45 + (h.ai.orbitR*0.001);
     const ox = Math.cos(orbitAng) * h.ai.orbitR, oy = Math.sin(orbitAng) * h.ai.orbitR;
     const targetX = player.x + ox, targetY = player.y + oy; const dx = targetX - h.x, dy = targetY - h.y; const d = Math.hypot(dx,dy) || 1;
     const dirX = dx / d, dirY = dy / d; const desired = clamp(d*2, 110, h.speed); h.x += dirX * desired * dt; h.y += dirY * desired * dt; h.angle = Math.atan2(dirY, dirX);
 
-    // Spotlight raises stars slowly (less frequent bumps)
+    // Spotlight: easy mode (faster)
     const toPX = player.x - h.x, toPY = player.y - h.y; const dot = (toPX*Math.cos(h.angle) + toPY*Math.sin(h.angle)) / (Math.hypot(toPX,toPY)||1);
     if (dot > 0.83 && Math.hypot(toPX,toPY) < 520) {
       h.ai.spotCooldown -= dt;
-      if (h.ai.spotCooldown <= 0 && wanted < 10) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 14; }
+      if (h.ai.spotCooldown <= 0 && wanted < 10) { wanted += 1; msg('Heli spotted you! ⭐+1'); h.ai.spotCooldown = 10; }
     }
 
-    // Missile fire at 3⭐+
+    // Missiles at 3⭐+
     if (wanted >= 3) {
       h.ai.fireCooldown -= dt;
       if (h.ai.fireCooldown <= 0) {
@@ -292,7 +307,6 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
       }
     }
 
-    // Missiles
     for (const m of h.missiles) {
       m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
       if (dist2(m.x, m.y, player.x, player.y) < 26*26 && !busted) onBusted();
@@ -300,9 +314,8 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
     h.missiles = h.missiles.filter(m=> m.life>0);
   }
 
-  // ======= Jets (fly-by passes, spawn grace, no hover) =======
+  // ======= Jets (fly-by passes, spawn grace) =======
   function updateJet(j, dt){
-    // retarget every few seconds to a new pass across the player
     j.retarget -= dt;
     if (j.retarget <= 0) {
       const dir = Math.atan2(player.y - j.y, player.x - j.x) + (Math.random()*0.6 - 0.3);
@@ -312,30 +325,24 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
       j.retarget = 3 + Math.random()*2;
     }
 
-    // move toward pass target (not chasing super tightly)
     const dx = j.targetX - j.x, dy = j.targetY - j.y;
     const d = Math.hypot(dx, dy) || 1;
     const ang = Math.atan2(dy, dx);
     j.angle = ang;
-    const speed = j.speed; // 900
-    j.x += Math.cos(ang) * speed * dt;
-    j.y += Math.sin(ang) * speed * dt;
+    j.x += Math.cos(ang) * j.speed * dt;
+    j.y += Math.sin(ang) * j.speed * dt;
 
-    // spawn grace: no firing immediately
     j.grace = Math.max(0, j.grace - dt);
 
-    // fire missiles at 7⭐+ only if not too close and no grace
     const distToPlayer = Math.hypot(player.x - j.x, player.y - j.y);
     j.cool -= dt;
     if (wanted >= 7 && j.grace <= 0 && distToPlayer > 420 && j.cool <= 0) {
       const m = makeMissile(j.x, j.y, player.x, player.y);
-      m.vx *= 2.0; m.vy *= 2.0; // faster than heli missile but not insane
-      m.life = 5;
+      m.vx *= 2.0; m.vy *= 2.0; m.life = 5;
       j.missiles.push(m);
-      j.cool = 2.8 + Math.random(); // slower cadence
+      j.cool = 2.8 + Math.random();
     }
 
-    // missiles step
     for (const m of j.missiles){
       m.x += m.vx*dt; m.y += m.vy*dt; m.life -= dt;
       if (dist2(m.x,m.y,player.x,player.y) < 26*26 && !busted) onBusted();
@@ -378,48 +385,37 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
     // Tanks (body + turret) + shells
     function drawTank(t){
       ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle);
-      // body
-      ctx.fillStyle = '#96b37f';
-      ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 2;
+      ctx.fillStyle = '#96b37f'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 2;
       ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
-      // turret (circle) + barrel
-      ctx.fillStyle = '#7e966c';
-      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#7e966c'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
       ctx.fillRect(0, -2, 18, 4);
       ctx.restore();
-
-      // shells
       ctx.fillStyle = '#e7f0c8';
       for (const s of t.shells) { ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI*2); ctx.fill(); }
     }
     tanks.forEach(drawTank);
 
-    // Helicopters (spotlight + body + missiles)
+    // Helicopters
     for (const h of helis) {
-      // spotlight
       ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#cfe9ff'; ctx.beginPath(); ctx.arc(h.x, h.y, h.spotlight, 0, Math.PI*2); ctx.fill(); ctx.restore();
-      // body/rotor
       ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(h.angle); ctx.fillStyle = '#ffd86b';
       ctx.beginPath(); ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI*2); ctx.fill();
       ctx.save(); ctx.rotate(h.rot); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-40, -2, 80, 4); ctx.restore(); ctx.restore();
-      // missiles
       ctx.fillStyle = '#aee2ff'; for (const m of h.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, Math.PI*2); ctx.fill(); }
     }
 
-    // Jets (triangle fighter) + missiles
+    // Jets (triangle) + missiles
     function drawJet(j){
       ctx.save(); ctx.translate(j.x, j.y); ctx.rotate(j.angle);
       ctx.fillStyle = '#9fc9ff'; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(18, 0);    // nose
-      ctx.lineTo(-16, -8);  // left tail
-      ctx.lineTo(-8, 0);    // center tail
-      ctx.lineTo(-16, 8);   // right tail
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-16, -8);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-16, 8);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
       ctx.restore();
-
-      // missiles
       ctx.fillStyle = '#d2ecff';
       for (const m of j.missiles) { ctx.beginPath(); ctx.arc(m.x, m.y, 3.5, 0, Math.PI*2); ctx.fill(); }
     }
@@ -445,7 +441,10 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
   function tick() {
     const now = performance.now(); const dt = Math.min(0.033, (now - last)/1000); last = now;
 
-    if (!pause && !busted) {
+    // Count down timer visual (optional fade control)
+    if (starting) { startTimer = Math.max(0, startTimer - dt); }
+
+    if (!pause && !busted && !starting) {
       updateCar(player, dt); npcs.forEach(n=> updateCar(n, dt)); cops.forEach(c=> updateCar(c, dt));
       helis.forEach(h=> updateHeli(h, dt)); tanks.forEach(t=> updateCar(t, dt)); jets.forEach(j=> updateJet(j, dt));
 
@@ -456,11 +455,11 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
       scoreAcc += dt * (wanted > 0 ? Math.max(0.5, wanted) : 0);
       if (scoreAcc >= 1) { const add = scoreAcc|0; score += add; scoreAcc -= add; }
 
-      // Heat to 10⭐
+      // Heat to 10⭐ — EASY mode + near-cop bonus stronger
       if (wanted>0 && wanted<10) {
         const speedFrac = clamp(player.speed / player.maxSpeed, 0, 1);
         let nearCop = false; for (const c of cops) { if (dist2(player.x,player.y,c.x,c.y) < 250*250) { nearCop = true; break; } }
-        heatTimer += dt * (HEAT_RATE_BASE + HEAT_RATE_SPEED*speedFrac + (nearCop? 0.08:0));
+        heatTimer += dt * (HEAT_RATE_BASE + HEAT_RATE_SPEED*speedFrac + (nearCop? 0.18:0));
         if (heatTimer >= HEAT_THRESHOLD) { wanted += 1; heatTimer = 0; msg('Heat rising! ⭐+1'); }
       } else if (wanted===0) { heatTimer = 0; }
     }
@@ -488,9 +487,10 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
     if (k==='r') {
       Object.assign(player, { x: 80, y: 80, angle: 0, vx:0, vy:0, speed:0 });
       busted = false; wanted = 0; heatTimer = 0; score = 0; scoreAcc = 0;
-      helis.length = 0; tanks.length = 0; jets.length = 0; msg('Reset!');
+      helis.length = 0; tanks.length = 0; jets.length = 0;
+      msgEl.style.opacity = '0';
+      startCountdown();
     }
-    if (k===' ') { if (wanted===0) { wanted = 2; msg('Chaos started: 2⭐'); } else { wanted = 0; msg('Lay low...'); } }
     if (k==='m') { camera.zi = (camera.zi + 1) % camera.zoomSteps.length; msg(`Zoom x${camera.zoomSteps[camera.zi].toFixed(2)}`); }
   });
 
@@ -509,31 +509,34 @@ const HEAT_THRESHOLD  = 6;    // was 14 (lower = faster stars)
 
   setInterval(()=>{
     const SOFT_CAP = 8;
-    if (cops.length < SOFT_CAP) { if (spawnCopNearPlayer()) msg('New cop unit spawned'); }
+    if (cops.length < SOFT_CAP && !starting) { if (spawnCopNearPlayer()) msg('New cop unit spawned'); }
 
     // helicopters: cap scales with wanted
     const heliCap = wanted >= 9 ? 3 : wanted >= 7 ? 2 : wanted >= 3 ? 1 : 0;
-    if (helis.length < heliCap && Math.random() < 0.5) {
+    if (helis.length < heliCap && Math.random() < 0.5 && !starting) {
       const ang = Math.random()*Math.PI*2; const r = 1000 + Math.random()*500;
       helis.push(makeHeli(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('Helicopter deployed!');
     }
 
     // tanks at 5⭐+
     const tankCap = wanted >= 7 ? 3 : wanted >= 5 ? 2 : 0;
-    if (tanks.length < tankCap) {
+    if (tanks.length < tankCap && !starting) {
       const ang = Math.random()*Math.PI*2; const r = 1200 + Math.random()*600;
       tanks.push(makeTank(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('⚠️ Tank incoming!');
     }
 
     // jets at 7⭐+
     const jetCap = wanted >= 9 ? 2 : wanted >= 7 ? 1 : 0;
-    if (jets.length < jetCap) {
+    if (jets.length < jetCap && !starting) {
       const ang = Math.random()*Math.PI*2; const r = 1800 + Math.random()*800;
       jets.push(makeJet(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r)); msg('✈️ Jet inbound!');
     }
 
-    if (wanted===0) { helis.length = 0; tanks.length = 0; jets.length = 0; }
+    if (wanted===0 && !starting) { helis.length = 0; tanks.length = 0; jets.length = 0; }
   }, 10000);
+
+  // Kick off initial countdown
+  startCountdown();
   </script>
 </body>
 </html>
